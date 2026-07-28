@@ -5,6 +5,7 @@
 // closes the sockets (called on App unmount). Per-agent /ws/agent and /ws/terminal sockets are owned by the agent
 // windows themselves (one socket per mounted window), not here.
 import { commSocket, statusFeed, eventsSocket } from '../net/channels'
+import { wsTicketEnabled, mintWsTicket } from '../net/wsTicket'
 import type { FrameRejection } from '../net/wsValidation'
 import type { HubConfig, SocketDeps } from './hubConfig'
 import type {
@@ -76,7 +77,12 @@ function dispatchStatus(frame: StatusFrame, actions: HubActions): void {
 }
 
 export function startLiveHub(config: HubConfig, actions: HubActions, deps: SocketDeps = {}): LiveHubHandle {
-  const common = { baseUrl: config.wsBase, token: config.token, factory: deps.factory, schedule: deps.schedule }
+  // CYP-881 (DARK): flag ON → the READ feeds (comm/status/events) mint a fresh single-use ticket per (re)connect against
+  // this hub's HTTP apiBase and fold `?ticket=`. Flag OFF (default) → provider absent → byte-unchanged `?token=` for all.
+  // The per-agent /ws/terminal socket (owned by the agent windows, not here) is unaffected and keeps `?token=`.
+  const mint = deps.mintTicket ?? mintWsTicket
+  const ticketProvider = wsTicketEnabled() ? (): Promise<string> => mint(config.apiBase) : undefined
+  const common = { baseUrl: config.wsBase, token: config.token, ticketProvider, factory: deps.factory, schedule: deps.schedule }
   const comm = commSocket({ ...common, onEvent: actions.onCommEvent, onOpen: actions.onCommOpen, onClose: actions.onCommClose, onReject: actions.onCommSkew })
   // CYP-844: ONE muxed status socket replaces the four separate feeds (lifecycle/token-usage/busy-state/terminal-state).
   // A StatusFrame is discriminated on `type`; we unwrap `.event` and fan it out to the SAME reducers the four feeds fed

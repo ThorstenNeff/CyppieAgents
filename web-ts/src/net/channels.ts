@@ -44,6 +44,9 @@ interface ChannelBase {
   onClose?: (code?: number) => void
   /** CYP-420: override the generated runtime validator (tests only — production uses the contract schema). */
   validate?: (raw: unknown) => never
+  /** CYP-881 (DARK): when present (flag ON), the underlying socket mints a fresh single-use ticket per (re)connect and
+   *  folds `?ticket=` instead of `?token=`. ABSENT (flag OFF / default) → byte-unchanged `?token=`. Rides through `...o`. */
+  ticketProvider?: () => Promise<string>
 }
 
 // --- bidirectional channels -------------------------------------------------------------------------------

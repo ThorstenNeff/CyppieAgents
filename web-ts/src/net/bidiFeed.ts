@@ -7,6 +7,7 @@
 // inbound frame (e.g. a generated zod schema). Default is identity; wiring zod uniformly is the W2-rest follow-up.
 import { deliverIfValid, rejectUnvalidated, type FrameRejection } from './wsValidation'
 import { ReconnectingSocket, type SocketFactory, type Scheduler } from './reconnectingSocket'
+import { wsAuthParams } from './wsTicket'
 import { Backoff } from './backoff'
 
 export interface BidiFeedOptions<TServer> {
@@ -27,6 +28,10 @@ export interface BidiFeedOptions<TServer> {
   backoff?: Backoff
   factory?: SocketFactory
   schedule?: Scheduler
+  /** CYP-881 (DARK): when present (flag ON), the socket mints a FRESH single-use ticket per (re)connect and folds
+   *  `?ticket=` instead of `?token=`. ABSENT (flag OFF / default) → byte-unchanged `?token=` path. Only the READ feeds
+   *  (comm/events) opt in; the terminal egress caller passes none, so it stays `?token=`. Injectable for tests. */
+  ticketProvider?: () => Promise<string>
 }
 
 export class BidiFeed<TServer, TClient> {
@@ -45,10 +50,9 @@ export class BidiFeed<TServer, TClient> {
         }
       : undefined
     this.rs = new ReconnectingSocket({
-      url: () => {
-        const p = new URLSearchParams({ ...(opts.query ?? {}), token: opts.token })
-        return `${opts.baseUrl}${opts.path}?${p.toString()}`
-      },
+      // CYP-881 (DARK): `ticket` present (flag ON) → fold `?ticket=`; absent (flag OFF) → `?token=`, byte-unchanged.
+      url: (ticket) => `${opts.baseUrl}${opts.path}?${wsAuthParams(opts.query, opts.token, ticket)}`,
+      ticketProvider: opts.ticketProvider,
       // CYP-420: validation failures DROP the frame (deliverIfValid) instead of throwing into the socket's
       // onmessage — one malformed frame must not tear down a live channel (fail-closed, not fail-brittle).
       // CYP-834: a wired onReject re-routes a SCHEMA violation to the terminal-skew path above.
