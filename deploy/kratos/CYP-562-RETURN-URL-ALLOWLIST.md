@@ -37,8 +37,14 @@ selfservice:
 
 At deploy:
 
-1. Replace **both** `REPLACE_ME_SPA_ORIGIN` occurrences with the **exact** web SPA origin
-   (e.g. `https://app.cyppie-agents.com`) — scheme + host + (port). No trailing wildcard, no path prefix.
+1. Replace **both** `REPLACE_ME_SPA_ORIGIN` occurrences with the **exact** web SPA origin **including a
+   trailing `/`** (e.g. `https://app.cyppie-agents.com/`) — scheme + host + (port) + `/`. No trailing wildcard,
+   no restrictive path prefix. **Keep the trailing `/`** (and set it on `default_browser_return_url` too, so the
+   default return matches the allow-list): because Kratos matches by prefix (see the rule above), the `/` is the
+   origin **terminator** — with it, a suffix-attack `https://app.cyppie-agents.com.evil.com/…` no longer
+   prefix-matches, while legitimate `https://app.cyppie-agents.com/…` paths still do. The bare form
+   `https://app.cyppie-agents.com` (no slash) is exactly the host **prefix** the rule above warns against — it
+   *does* prefix-match `…com.evil.com`.
 2. **Keep `http://127.0.0.1:47472/callback` verbatim.** It is the desktop app's fixed RFC 8252 loopback return
    (`desktopApp/.../main.kt`, `LOOPBACK_PORT = 47472`). Changing/dropping it breaks the desktop OIDC return.
 3. Do **not** add any further entries unless each is an exact, first-party origin under the rule above.
