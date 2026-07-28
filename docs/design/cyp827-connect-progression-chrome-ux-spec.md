@@ -1,7 +1,7 @@
 # CYP-827 (A5) — Connect-Progression-Status-Chrome: Zone-2 In-Flight States
 
 > UX/UI-Placement/Visual-Spec. Für den **A5-Real-Socket-Flow** (Dev5 baut ihn gegen Stub) — der visuelle Spec der
-> **Zone-2-in-flight-Progression** (dialing → handshake → trust-check → authenticating → connected/reconnecting), damit's
+> **Zone-2-in-flight-Progression** (dialing → handshake → trust-check → connected/reconnecting — **5 web-States**; s. Platform-Parität §0b), damit's
 > beim **CYP-827-Mount** ready ist. Parität zu Compose `RemoteConnectingView` (`HubConnectSelection.kt`). Ergänzt
 > **CYP-823** (Failure-View-Host / die terminal-negativen Ausgänge) + **CYP-838** (STALE-Token). Ich designe/spec/verifiziere.
 
@@ -12,7 +12,21 @@ Die Progression ist **Zone-2-*in-flight*** — **transient, per-Connect-Versuch*
 „Progression vs terminal-failure"-Split ist **innerhalb Zone 2**, orthogonal zur Zone1(Status)/Zone2(Connect-Flow)-Trennung.
 Zone-1-Badges **coexistieren** mit jedem Progression-State (der Hub trägt sein Trust-Badge, während er verbindet).
 
-## 1. Die Progression-States (Parität zu Compose, Copy wortgleich)
+## 0b. ★ Platform-Parität — 6 States nativ / **5 States web** (`authenticating` ist Compose-only)
+**Backend2 (Protokoll-Owner) am Objekt geruled + von mir am frozen Contract verifiziert:** die frozen web-ts
+`RemoteConnState` (`state/remoteConnState.ts:85`) hat **KEINE `authenticating`-Phase** — `idle · dialing · handshake ·
+trust-check · connected · reconnecting · failed · lost`. Also **5 Progression-States web** (dialing/handshake/trust-check/
+connected/reconnecting) vs **6 nativ**. **Kein Bug/Drift** — eine **Auth-Architektur-Differenz:**
+- **native (Compose):** zwei **getrennte** Beweise über den Tunnel — Hub-Identität (`trust-check`) **UND** Operator-PoP
+  (distinct `AUTHENTICATING` = WebAuthn) → ein eigener post-trust-check-Schritt.
+- **web-ts:** Operator-Autorität sitzt in der **Transport-Schicht** — der **httpOnly Session-Cookie** authentisiert den
+  WSS-Handshake (CYP-454); der Operator ist **schon auth'd bei Socket-Open** → **kein** distinkter post-trust-check-Auth-
+  Schritt, also **keine** `authenticating`-Phase.
+- **Folge:** die nativen `AUTHENTICATING`-Failures (`DeviceNotEnrolled` / `UvFailed` / `EnrollTimedOut`) sind **native-only**
+  und tauchen in der web-ts-Failure-Region **nicht** auf. Meine ursprüngliche 6-State-Liste spiegelte Compose; der
+  **authoritative web-ts-Spec = 5 States** (matcht Dev5s M5-Build). Die §1-Tabelle unten ist entsprechend die **web-ts**-Sicht.
+
+## 1. Die Progression-States (web-ts: 5 · Copy wortgleich zu Compose)
 Der Connect-Flow des **aktiven** Hubs schaltet auf den Conn-State. Copy 1:1 aus Compose (`values/strings.xml`,
 `remote_connect_*`); Tags Compose-Parität (`RemoteConnectTags`); **nicht** per-`hubId` (eine Verbindung zur Zeit).
 
@@ -21,7 +35,6 @@ Der Connect-Flow des **aktiven** Hubs schaltet auf den Conn-State. Copy 1:1 aus 
 | dialing | Relay wird gewählt … | `remote.connect.relayDialing` | neutraler Spinner | neutral | polite/status |
 | handshake | E2E-Handshake … | `remote.connect.e2eHandshake` | neutraler Spinner | neutral | polite/status |
 | **trust-check** | Hub-Vertrauen wird geprüft … | `remote.connect.trustCheck` | Spinner **+ provisorisch-Disclosure** (§2.1) | neutral | polite/status |
-| authenticating | Operator wird bestätigt … | `remote.connect.authenticating` | neutraler Spinner | neutral | polite/status |
 | **reconnecting** | Verbindung unterbrochen — verbinde neu … | `remote.relayDrop` | neutraler Spinner (§2.2) | **neutral, nie Alarm** | polite/status |
 | **connected** | Verbunden | `remote.connect.connected` | **`●` + primary** (LIVE-Idiom, §2.3) | LIVE | polite/status |
 
@@ -52,7 +65,7 @@ Drop als terminaler Stopp — [[terminal-block-tone-is-structural]] / die CYP-82
 
 ### 2.3 CONNECTED = **non-optimistisch, „● live" NUR bei echtem CONNECTED**
 Der **`●` + `primary`** LIVE-Marker wird **ausschließlich** im echten CONNECTED-State erreicht — **nie** vorher
-(dialing/handshake/trust-check/authenticating zeigen nie den Live-Marker). Kein optimistischer Vorgriff.
+(dialing/handshake/trust-check zeigen nie den Live-Marker). Kein optimistischer Vorgriff.
 - **★ Abgrenzung (nicht konflatieren):** dieses `●`+`primary` ist das **LIVE-Verbindungs-Idiom** (wie
   `RemoteSecurityTierBadge` native = „LIVE ●+primary", CYP-676) — es ist **NICHT** die axis-a-Trust-Affirmation (die bleibt
   **neutral**, CYP-803: `trusted`≠primary). Verbindungs-**Liveness** (primary ok) ≠ Trust-**Verdikt** (neutral). Zwei Achsen.
@@ -67,10 +80,9 @@ Der **`●` + `primary`** LIVE-Marker wird **ausschließlich** im echten CONNECT
 
 ## 4. Cross-Surface-Parität
 - **Copy wortgleich** aus Compose (`remote_connect_relay_dialing/e2e_handshake/trust_check/trust_provisional/
-  authenticating/relay_dropped/connected`) — keine divergente Zweitformulierung.
+  relay_dropped/connected`) — `authenticating` ist Compose-only (§0b) — keine divergente Zweitformulierung.
 - **Tags Compose-Parität** (`remote.connect.*`), nicht per-`hubId`.
-- **Struktur-Parität:** Compose `RemoteConnectingView` (conn-switch) — dieselben States, dieselbe Auflösung zu
-  CONNECTED | Failure-Region.
+- **Struktur-Parität:** Compose `RemoteConnectingView` (conn-switch) — **dieselbe Struktur** (web-States = Compose-Subset ohne `authenticating`, §0b), dieselbe Auflösung zu CONNECTED | Failure-Region.
 
 ## 5. Teeth (Tester2, beim Mount)
 1. **`●`+primary NUR bei CONNECTED** — kein Progression-State < CONNECTED zeigt den LIVE-Marker. *(Mutation: `●`+primary in
