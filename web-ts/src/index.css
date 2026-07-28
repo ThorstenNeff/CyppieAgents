@@ -1908,6 +1908,38 @@ body {
   font-style: italic;
 }
 
+/* CYP-855 (Multi-Hub M5) — the connect-progression chrome (CYP-827 Zone-2 in-flight). colour-never-sole: the copy word
+   + spinner form carry the meaning; tone is reinforcement. In-flight steps are NEUTRAL (never alarm — alarm/terminal is
+   the failure region). CONNECTED's ● is the LIVE idiom in `primary` (liveness), NOT the axis-a trust affirmation
+   (that stays neutral, CYP-803 — two axes). */
+.remote-progression {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.remote-progression-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--md-sys-color-outline); /* neutral in-flight — never an alarm/error tone */
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: remote-progression-spin 0.8s linear infinite;
+}
+@keyframes remote-progression-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.remote-progression-live {
+  color: var(--md-sys-color-primary); /* LIVE ●+primary idiom (CYP-827 §2.3 / CYP-676) — liveness, NOT trust */
+}
+.remote-progression-provisional {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--md-sys-color-on-surface-variant); /* neutral labelSmall — provisional, no alarm */
+}
+
 /* CYP-801 (N3) — the per-hub trust badge (uiux2 CYP-755 §1). Mirrors the .rst pill idiom. Colour is NEVER the sole
    carrier: the glyph FORM (◯◔●⊘◑) + label WORD already distinguish all five states; tone is reinforcement only.
    unknown/pending stay NEUTRAL-muted (no optimistic/alarm colour); trusted is NEUTRAL too but full-emphasis (never-green
