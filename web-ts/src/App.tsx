@@ -54,12 +54,13 @@ import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
 import { lifecycleRejectMessage } from './agentview/lifecycleStatus'
 import type { LifecycleAction, CommConnection } from './state/hubReducers'
-import type { AclEntry, ApiKeyView, DeliveredMessage, RepoConfigView, RepoConfigRequest, ProjectsView, Capacity, CompactStatus, CompactConfig, WorkspaceMember, OperatorAudit } from './types/generated/contract'
+import type { AclEntry, ApiKeyView, DeliveredMessage, RepoConfigView, RepoConfigRequest, ProjectsView, Capacity, CompactStatus, CompactConfig, WorkspaceMember, OperatorAudit, CreateChannelRequest } from './types/generated/contract'
 import { WorkspaceRosterPanel } from './workspace/WorkspaceRosterPanel'
 import { CapacityPill } from './workspace/CapacityPill'
 import { CompactPanel } from './compact/CompactPanel'
 import { ProjectManagementPanel } from './project/ProjectManagementPanel'
 import { ChannelSharePanel } from './comm/ChannelSharePanel'
+import { ChannelManagementPanel } from './comm/ChannelManagementPanel'
 import { ProjectSwitcher } from './project/ProjectSwitcher'
 import { OverloadBanner } from './workspace/OverloadBanner'
 import { UnconfiguredBanner } from './workspace/UnconfiguredBanner'
@@ -77,6 +78,7 @@ import { loadThemeMode, saveThemeMode, applyThemeMode, type ThemeMode } from './
 
 const AGENT_PREFIX = 'agent:'
 const ACL_WINDOW_ID = 'acl'
+const CHANNEL_MGMT_WINDOW_ID = 'channelMgmt'
 const COMM_WINDOW_ID = 'comm'
 const EVENT_WINDOW_ID = 'events'
 const EVENT_BROWSE_WINDOW_ID = 'eventBrowse'
@@ -513,6 +515,9 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     }
     if (agents.length > 0 && !present.has(COMM_WINDOW_ID)) wm.add(tiledWindow(COMM_WINDOW_ID, 'Kommunikation', index++), true)
     if (agents.length > 0 && !present.has(ACL_WINDOW_ID)) wm.add(tiledWindow(ACL_WINDOW_ID, 'Zugriffsrechte (ACL)', index++), false)
+    // CYP-875 (OS-C): channel management is OPERATOR-ONLY (create/rename/archive are operator-tier; a non-operator
+    // gets no window — the server 403 is still honestly surfaced if a mutation is somehow attempted).
+    if (agents.length > 0 && operator && !present.has(CHANNEL_MGMT_WINDOW_ID)) wm.add(tiledWindow(CHANNEL_MGMT_WINDOW_ID, 'Kanäle verwalten', index++), false)
     // CYP-432: the event log is OPERATOR-ONLY — a non-operator gets no event window at all (no bodies surface).
     if (agents.length > 0 && operator && !present.has(EVENT_WINDOW_ID)) wm.add(tiledWindow(EVENT_WINDOW_ID, 'Ereignis-Protokoll', index++), true)
     // CYP-650: the workspace roster is OPERATOR-ONLY — a non-operator gets NO window at all (enumeration seam), not a
@@ -638,6 +643,14 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     // echo, so commitAclChange clears the pending itself (else the switch spins forever) and surfaces the reason.
     void commitAclChange(hubRepo, { markPending: markAclPending, clearPending: clearAclPending, setError: setAclError }, entry, dims)
   }
+
+  // CYP-875 (OS-C): channel-management mutations delegate to the repo; the panel owns the optimistic UI + rollback +
+  // honest error. On success we re-sync the channel list (belt-and-suspenders with the /ws/comm channels snapshot) so
+  // the optimistic entry is reconciled against the server truth. Rejects (409 protected-HUB / 403 operator) propagate
+  // to the panel, which shows them honestly and rolls back.
+  const createChannel = (req: CreateChannelRequest) => hubRepo.createChannel(req).then((c) => { void loadChannels(); return c })
+  const renameChannel = (id: string, name: string) => hubRepo.renameChannel(id, name).then((c) => { void loadChannels(); return c })
+  const archiveChannel = (id: string) => hubRepo.archiveChannel(id).then(() => { void loadChannels() })
 
   // CYP-433 write-only save: send the plaintext up, keep only the MASKED view the server returns. The plaintext
   // lives only in this call's argument (the panel's transient input) — never stored, never logged. Rejects surface
@@ -908,6 +921,18 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
             loadChannels()
             loadAcl()
           }}
+        />
+      )
+    }
+    if (win.id === CHANNEL_MGMT_WINDOW_ID) {
+      return (
+        <ChannelManagementPanel
+          channels={channels}
+          agentIds={agents}
+          operator={operator}
+          onCreateChannel={createChannel}
+          onRenameChannel={renameChannel}
+          onArchiveChannel={archiveChannel}
         />
       )
     }
