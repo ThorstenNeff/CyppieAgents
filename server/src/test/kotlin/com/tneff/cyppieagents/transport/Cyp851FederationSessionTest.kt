@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.transport
 
 import com.tneff.cyppieagents.model.ExperimentalFederation
+import com.tneff.cyppieagents.model.HubIssuerTrust
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.toList
@@ -26,6 +27,13 @@ class Cyp851FederationSessionTest {
         override suspend fun close() { closeCount++ }
     }
 
+    // CYP-858: the constructor is private — the SOLE path is the gated FederationSession.open(). These plumbing teeth
+    // build through an ADMITting gate (enabled + TRUSTED) so they still exercise a real session; the admission gating
+    // itself is covered by Cyp858FederationSessionSolePathTest.
+    private val admittingGate = FederationAdmissionGate(federationEnabled = true)
+    private fun openSession(transport: FederationPeerTransport): FederationSession =
+        FederationSession.open(admittingGate, HubIssuerTrust.TRUSTED, transport)!!
+
     /**
      * Byte-OPAQUE forward: an arbitrary, non-UTF8 frame is forwarded to the transport UNCHANGED — proving the
      * session never decodes/reshapes a frame (the stub-only §5-Naht discipline in behavioral form). MUT the session
@@ -34,7 +42,7 @@ class Cyp851FederationSessionTest {
     @Test
     fun send_forwardsArbitraryBytesUnchanged_byteOpaque() = runBlocking {
         val t = FakeTransport()
-        val session = FederationSession(t)
+        val session = openSession(t)
         val frame = byteArrayOf(0x00, 0xFF.toByte(), 0x7F, 0x80.toByte(), 0x01)
         session.send(frame)
         assertEquals(1, t.sent.size)
@@ -46,7 +54,7 @@ class Cyp851FederationSessionTest {
     fun incoming_isTheTransportStreamVerbatim() = runBlocking {
         val a = byteArrayOf(1)
         val b = byteArrayOf(2, 3)
-        val session = FederationSession(FakeTransport(incomingFrames = listOf(a, b)))
+        val session = openSession(FakeTransport(incomingFrames = listOf(a, b)))
         val got = session.incoming.toList()
         assertEquals(2, got.size)
         assertContentEquals(a, got[0])
@@ -57,7 +65,7 @@ class Cyp851FederationSessionTest {
     @Test
     fun sendAfterClose_failsClosed() = runBlocking {
         val t = FakeTransport()
-        val session = FederationSession(t)
+        val session = openSession(t)
         session.close()
         // assertFailsWith returns the caught exception (non-Unit) → keep a Unit-returning assert LAST so the
         // JUnit4 @Test method stays `void`.
@@ -70,7 +78,7 @@ class Cyp851FederationSessionTest {
     @Test
     fun close_isIdempotent() = runBlocking {
         val t = FakeTransport()
-        val session = FederationSession(t)
+        val session = openSession(t)
         session.close()
         session.close()
         assertEquals(1, t.closeCount)
@@ -85,8 +93,8 @@ class Cyp851FederationSessionTest {
     fun twoSessions_rideIndependentTransports_noMux() = runBlocking {
         val tA = FakeTransport()
         val tB = FakeTransport()
-        val sA = FederationSession(tA)
-        val sB = FederationSession(tB)
+        val sA = openSession(tA)
+        val sB = openSession(tB)
 
         sA.send(byteArrayOf(0xA))
         assertEquals(1, tA.sent.size)
