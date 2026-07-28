@@ -21,11 +21,13 @@ import { HubTrustBadge } from '../comm/HubTrustBadge'
 import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 import { formatHandoffSince } from '../agentview/handoffBannerModel'
 import type { HubId } from '../net/hubRegistry'
+import type { HubTrustState } from '../connector/hubTrustModel'
 
 export function HubSwitcher({
   activeHubId,
   onSwitch,
   onRetry,
+  trustFor,
 }: {
   /** The server-confirmed active hub — the active marker follows THIS, never an in-flight click (non-optimistic). */
   activeHubId: HubId
@@ -33,6 +35,9 @@ export function HubSwitcher({
   onSwitch: (hubId: HubId) => Promise<void>
   /** Retry a failed /api/cp/hubs load. */
   onRetry: () => void
+  /** CYP-854 (M4): the axis-a trust to display per hub, from the host's observation provenance (displayedTrust). ABSENT
+   *  ⇒ null ⇒ UNKNOWN (fail-closed pre-arming §2b): the switcher never fabricates trust; the host feeds observed/STALE. */
+  trustFor?: (hubId: HubId) => HubTrustState
 }) {
   const { hubs, loaded, loadError } = useHubListStore()
   const [pending, setPending] = useState(false)
@@ -86,8 +91,9 @@ export function HubSwitcher({
                 <span className="hub-switcher-lastseen" data-testid={`hub-switcher.lastSeen.${h.hubId}`}>
                   zuletzt gesehen {formatHandoffSince(h.lastSeen)}
                 </span>
-                {/* axis-a hub-key trust — UNKNOWN pre-arming (§2b); NEVER wired to a live decision here. */}
-                <HubTrustBadge hubId={h.hubId} trust={null} />
+                {/* axis-a hub-key trust — from the host's observation provenance (displayedTrust); absent ⇒ UNKNOWN
+                    (fail-closed pre-arming §2b). The switcher never derives trust; it only displays what it is fed. */}
+                <HubTrustBadge hubId={h.hubId} trust={trustFor?.(h.hubId) ?? null} />
               </button>
             </li>
           )
