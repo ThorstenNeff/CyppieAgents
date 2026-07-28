@@ -16,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,6 +46,8 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_agent_add_id
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_add_persona
 import kmpcyppieagents.app.shared.generated.resources.agent_add
 import kmpcyppieagents.app.shared.generated.resources.agent_add_autofields_note
+import kmpcyppieagents.app.shared.generated.resources.agent_add_remote_label
+import kmpcyppieagents.app.shared.generated.resources.agent_add_remote_hint
 import kmpcyppieagents.app.shared.generated.resources.agent_add_confirm
 import kmpcyppieagents.app.shared.generated.resources.agent_add_success
 import kmpcyppieagents.app.shared.generated.resources.agent_add_error
@@ -364,6 +367,21 @@ private fun AddDialog(
                 // CYP-123/CYP-126: connector picker (+ B opt-in). Add context → feeds NewAgentSpec.connectorKind,
                 // no connector-endpoint call, no restart hint (fresh spawn, spec §3.4).
                 addConnectorPickerSlot()
+
+                // CYP-899 (BYOA-M1 B1): remote/BYOA create toggle → NewAgentSpec.remote (off by default = local agent).
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(Res.string.agent_add_remote_label))
+                    Switch(
+                        checked = state.addForm.remote,
+                        onCheckedChange = viewModel::setAddRemote,
+                        modifier = Modifier.testTag(AgentMgmtTags.ADD_REMOTE_TOGGLE),
+                    )
+                }
+                TonedHint(stringResource(Res.string.agent_add_remote_hint), HintTone.INFO, AgentMgmtTags.ADD_REMOTE_HINT)
 
                 val err = when {
                     state.addIdCollision -> Res.string.agent_add_id_exists

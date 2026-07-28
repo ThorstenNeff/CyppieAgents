@@ -30,6 +30,12 @@ data class AddForm(
      * The create carries it (no connector-endpoint call for add).
      */
     val connectorKind: ConnectorKind = ConnectorKind.STREAM_JSON,
+    /**
+     * CYP-899 (BYOA-M1 B1) — create this as a **remote/BYOA** agent (`NewAgentSpec.remote`): not spawned locally,
+     * the server mints a per-agent bearer token and the agent joins over the wire. Default false (local agent).
+     * B1 is only the toggle; surfacing the minted token is B2 (CYP-900).
+     */
+    val remote: Boolean = false,
 )
 
 /** Edit-dialog fields (CYP-88). id/worktree are identity/path-defining and intentionally NOT here. */
@@ -173,6 +179,9 @@ class AgentManagementViewModel(
     fun setAddConnectorKind(kind: ConnectorKind) =
         _state.update { it.copy(addForm = it.addForm.copy(connectorKind = kind)) }
 
+    /** CYP-899 (B1) — toggle the create's remote/BYOA flag (→ [NewAgentSpec.remote] at [confirmAdd]). */
+    fun setAddRemote(v: Boolean) = _state.update { it.copy(addForm = it.addForm.copy(remote = v)) }
+
     fun confirmAdd() {
         val s = _state.value
         if (!s.canConfirmAdd) return // fail-closed + guardrail (server also enforces)
@@ -187,6 +196,8 @@ class AgentManagementViewModel(
                         // CYP-126: the create carries the connector (A by default; B only after the picker's
                         // ack-gated opt-in). No connector-endpoint call for add — the spec carries the choice.
                         connectorKind = f.connectorKind,
+                        // CYP-899 (B1): the create carries the remote/BYOA flag from the toggle.
+                        remote = f.remote,
                     ),
                 )
             }.onSuccess {
