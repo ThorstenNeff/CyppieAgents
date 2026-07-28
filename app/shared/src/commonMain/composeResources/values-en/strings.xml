@@ -69,6 +69,10 @@
     <string name="channel_mgmt_error_protected_hub">Channel protected — hub-and-spoke channels cannot be archived.</string>
     <string name="channel_mgmt_error_operator_only">Only the operator may manage channels.</string>
     <string name="channel_mgmt_error_generic">Action failed.</string>
+    <string name="agent_address_label">Direct message to</string>
+    <string name="agent_address_open">Open</string>
+    <string name="agent_address_unreachable">Not directly addressable — create a channel first.</string>
+    <string name="agent_address_ambiguous">Ambiguous — multiple direct channels for this agent; please pick the channel manually.</string>
     <string name="comm_status_connecting">Connecting…</string>
     <string name="comm_readonly_hint">Read-only access in this channel</string>
     <string name="comm_send_denied">No write access in this channel</string>

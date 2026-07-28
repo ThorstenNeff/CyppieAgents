@@ -112,6 +112,7 @@ fun CommPanel(
                     onSelect = viewModel::select,
                     onReload = viewModel::reloadChannels,
                     crossProjectSlot = crossProjectSlot,
+                    addressableAgents = state.agents.keys.toList(),
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -134,6 +135,7 @@ fun CommPanel(
                     onSelect = viewModel::select,
                     onReload = viewModel::reloadChannels,
                     crossProjectSlot = crossProjectSlot,
+                    addressableAgents = state.agents.keys.toList(),
                     modifier = Modifier.width(220.dp).fillMaxSize(),
                 )
                 TimelinePane(
@@ -158,9 +160,21 @@ private fun ChannelListPane(
     onSelect: (String) -> Unit,
     onReload: () -> Unit,
     crossProjectSlot: @Composable (channelId: String) -> Unit,
+    // CYP-884 (OS-D): the recipient-addressing picker mounts above the channel nav. Empty ⇒ not shown (no roster yet).
+    addressableAgents: List<String> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
+        // CYP-884 (OS-D): recipient addressing — pick a target agent → resolve its DIRECT spoke → jump the composer.
+        // Above the nav (web-ts parity), independent of the channel-list load state.
+        if (addressableAgents.isNotEmpty()) {
+            AgentAddressPicker(
+                agentIds = addressableAgents,
+                channels = channels,
+                onSelectChannel = onSelect,
+                modifier = Modifier.padding(12.dp),
+            )
+        }
         // CYP-279 (CYP-270/276 class): gate the "no channels" message on !loadingChannels so it never flashes
         // during the initial / project-switch load window — only a settled-empty channel set shows it.
         if (channelsError) {
