@@ -14,6 +14,7 @@ import { applyMentionSpans } from './mentionSpans'
 import { channelUnread, READ_STATE_UNAVAILABLE, type UnreadView } from './unreadModel'
 import { channelHasMention } from './mentionCue'
 import { messageKind, isOrchestrationKind, replyParent, replyDepth, indexById } from './orchestrationMessage'
+import { AgentAddressPicker } from './AgentAddressPicker'
 import type { Channel, DeliveredMessage } from '../types/generated/contract'
 
 export interface CommPanelProps {
@@ -35,6 +36,8 @@ export interface CommPanelProps {
   sendError: string | null
   onSend: (text: string) => void
   historySize: () => number
+  /** CYP-876 (OS-D): candidate DM recipients (roster agent ids minus self). Absent ⇒ no addressing control rendered. */
+  addressableAgents?: readonly string[]
   // CYP-288: a failed INITIAL channel-list / history load surfaces error+retry, NOT an empty list (failed ≠ empty).
   // Gated on the data still being empty → live/WS data or a successful retry hides the error naturally.
   channelsLoadError?: boolean
@@ -71,6 +74,11 @@ export function CommPanel(props: CommPanelProps) {
 
   return (
     <div className="comm-panel" data-testid="comm-panel">
+      {/* CYP-876 (OS-D): recipient addressing — pick an agent → jump to its DIRECT spoke (fail-closed; unreachable/
+          ambiguous are surfaced, never a silent route). Absent candidates ⇒ not rendered. */}
+      {props.addressableAgents !== undefined && props.addressableAgents.length > 0 && (
+        <AgentAddressPicker agentIds={props.addressableAgents} channels={channels} onSelectChannel={onSelectChannel} />
+      )}
       <nav className="comm-channels" aria-label="Kanäle" data-testid="comm-channels">
         {channels.length === 0
           ? // CYP-288: a failed channel-list load shows error+retry, not a silently-empty list. Genuinely-empty
