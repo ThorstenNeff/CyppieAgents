@@ -28,6 +28,7 @@ import com.tneff.cyppieagents.connect.HubConnectViewModel
 import com.tneff.cyppieagents.connect.LivePassphrasePromptCoordinator
 import com.tneff.cyppieagents.connect.RemoteHubConnectGate
 import com.tneff.cyppieagents.connect.defaultControlPlaneClient
+import com.tneff.cyppieagents.multihub.hubListSourceFor
 import com.tneff.cyppieagents.connect.defaultRemoteComponentsFactory
 import com.tneff.cyppieagents.connect.StubHubCredentialRepository
 import com.tneff.cyppieagents.connect.StubLocalConnectFeed
@@ -112,13 +113,18 @@ fun App(
                 // recompositions (a post-enroll pre-arm survives enroll→reconnect, AC-2). Threaded into the live factory;
                 // on non-jvm / INERT it is simply ignored (the factory returns null).
                 val passphrasePromptCoordinator = remember { LivePassphrasePromptCoordinator() }
+                // CYP-861 (Compose-M4 list-live): ONE control-plane client, hoisted so both the connect VM (below) and
+                // the workspace hub-list top-bar (AgentShell `hubListSource`) share it. Env-gated inside
+                // `defaultControlPlaneClient` (real HttpControlPlaneClient iff CYPPIE_CP_BASE_URL, else the INERT
+                // StubControlPlaneClient → `hubListSourceFor` null → the CYP-856 bar stays dormant, prod byte-identical).
+                val controlPlane = remember { defaultControlPlaneClient(authRepo::currentSessionToken) }
                 RemoteHubConnectGate(
                     enabled = remoteConnectEnabled,
                     createViewModel = {
                         HubConnectViewModel(
                             // S-J: env-gated live HttpControlPlaneClient (jvm + CYPPIE_CP_BASE_URL set) else the
                             // INERT StubControlPlaneClient — byte-identical to today until the env-gated swap + deploy.
-                            controlPlane = defaultControlPlaneClient(authRepo::currentSessionToken),
+                            controlPlane = controlPlane,
                             credentials = StubHubCredentialRepository(),
                             connectFeed = StubLocalConnectFeed(),
                             remoteConnectFeed = defaultRemoteConnectFeed(),
@@ -142,6 +148,11 @@ fun App(
                         transport = handoff?.transport,
                         // CYP-527: the connected remote hub's name → the persistent remote-operating context WARN banner.
                         remoteContext = handoff?.hubName,
+                        // CYP-861 (Compose-M4 list-live): the real registered-hub LIST feeds the CYP-856 top-bar. Env-gated
+                        // — `hubListSourceFor` returns null for the INERT StubControlPlaneClient (off-CP) so the bar stays
+                        // DORMANT (prod byte-identical); a real CP client → the live ControlPlaneHubListSource. Arming stays
+                        // DARK: AgentShell keeps activeHubId=""/onSwitch={} and the trust badge UNKNOWN (§9.3 = Compose-M3).
+                        hubListSource = hubListSourceFor(controlPlane),
                         // M2 Seam-3 (b): the live RemoteSessionState flow → the Seam-6 relay-drop / in-flight-uncertain chrome.
                         remoteSessionState = handoff?.sessionState,
                         // CYP-427/M2 Seam #8: the revoke → the handoff's guaranteed local teardown (backToHubList/close).
