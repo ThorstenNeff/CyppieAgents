@@ -250,7 +250,21 @@ data class MentionSpan(val start: Int, val end: Int, val id: String)
  * client-side re-derivation. `mentions` is additive-defaulted so an older/absent payload decodes to no overlay.
  */
 @Serializable
-data class DeliveredMessage(val message: Message, val mentions: List<MentionSpan> = emptyList())
+data class DeliveredMessage(
+    val message: Message,
+    val mentions: List<MentionSpan> = emptyList(),
+    /**
+     * CYP-905 (Parity-Edit E-server) — the out-of-band edit timestamp (epoch ms) of the last edit to [message],
+     * or `null` when [message] was never edited. A client renders an "(edited)" marker + when this is present.
+     *
+     * ★ Lives ONLY on this FRONTEND wrapper, **NEVER on [Message]** — the `/ws/hub` `WireMessage(message)` frame
+     * embeds the bare [Message] verbatim (§9 BYOA-wire guard), and the edited **body** already rides
+     * `message.body` in-place (agents see the current text); only this MARKER is frontend-scoped. Additive-nullable
+     * (no `@Required`, CYP-786/CYP-798 → optional in the contract, non-breaking): an older/absent payload decodes
+     * to `null` (unedited), so a pre-CYP-905 consumer is unaffected and no CYP-834 skew is introduced.
+     */
+    val editedAt: Long? = null,
+)
 
 // ----- REST request/response wire types -----
 
@@ -263,6 +277,17 @@ data class DeliveredMessage(val message: Message, val mentions: List<MentionSpan
 data class SendMessageRequest(
     val body: String,
     val meta: MessageMeta? = null,
+)
+
+/**
+ * CYP-905 — body for PUT /api/channels/{id}/messages/{msgId} (edit a posted message). Carries ONLY the new
+ * text: the editor is resolved from the bearer identity, the channel + message from the path — never from
+ * client content (Reviewer Gate #1, same stance as [SendMessageRequest]). `meta` is deliberately NOT
+ * re-settable on edit (MVP: a text-only edit; kind/inReplyTo stay as posted).
+ */
+@Serializable
+data class EditMessageRequest(
+    val body: String,
 )
 
 /**

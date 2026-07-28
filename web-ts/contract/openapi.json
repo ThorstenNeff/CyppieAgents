@@ -395,6 +395,51 @@
                 }
             }
         },
+        "/api/channels/{id}/messages/{msgId}": {
+            "put": {
+                "operationId": "put_api_channels__id__messages__msgId_",
+                "x-auth-tier": "PARTICIPANT_WRITE",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/EditMessageRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DeliveredMessage"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/inbox": {
             "get": {
                 "operationId": "get_api_inbox",
@@ -3054,6 +3099,12 @@
                         "items": {
                             "$ref": "#/components/schemas/MentionSpan"
                         }
+                    },
+                    "editedAt": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -3159,6 +3210,17 @@
                                 "type": "null"
                             }
                         ]
+                    }
+                },
+                "required": [
+                    "body"
+                ]
+            },
+            "EditMessageRequest": {
+                "type": "object",
+                "properties": {
+                    "body": {
+                        "type": "string"
                     }
                 },
                 "required": [

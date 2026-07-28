@@ -17,6 +17,7 @@ import com.tneff.cyppieagents.model.ReadStateEvent
 import com.tneff.cyppieagents.auth.ParticipantPrincipal
 import com.tneff.cyppieagents.routing.ConflictException
 import com.tneff.cyppieagents.routing.ForbiddenException
+import com.tneff.cyppieagents.routing.NotFoundException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -105,6 +106,47 @@ class Hub(
         onPosted(stored) // CYP-132: durable inbound delivery — AFTER persist (the single funnel)
         onSent(stored)   // CYP-698: provenance emit (comm.sent) — AFTER persist, at the single chokepoint
         return stored
+    }
+
+    /**
+     * CYP-905 (Parity-Edit E-server) — the EDIT chokepoint: replace message [messageId]'s body with [newBody]
+     * in [channelId], author-gated and fail-closed. A **parallel** guarded path to [postAsAgent] — NOT a bypass:
+     * it never sends a new message, never routes on body content, and [postAsAgent] stays the sole SEND path.
+     *
+     * Gates (fail-closed, in order — no existence tell):
+     *  1. **canWrite** on [channelId] for [editorId], checked BEFORE any lookup (mirrors [postAsAgent] Gate #2): a
+     *     non-writer / non-existent channel gets a uniform 403 and learns nothing about message existence.
+     *  2. the message must exist in [channelId] → else 404 `message_not_found`.
+     *  3. **author-gate**: only the author may edit (`existing.from == editorId`) — identity-agnostic
+     *     (`from` is the server-stamped agentId OR human identityId), so this needs NO new §5b surface. Else 403.
+     *  4. the new body is secret-masked (Gate #3 egress, same as [postAsAgent]).
+     *
+     * The edited body rides `message.body` in-place (agents on `/ws/hub` see the current text); the `editedAt`
+     * marker is stored out-of-band and carried on the re-emitted [DeliveredMessage] (frontend wrapper). The
+     * re-emit reuses the existing [MessageEvent] — the client upserts by `message.id` (its reconnect-dedup key),
+     * replacing the old row. An edit is NOT a new post: it does NOT bump unread ([emitReadStateFor]) nor re-fire
+     * delivery/provenance ([onPosted]/[onSent]) — same `seq`, one authored message.
+     */
+    fun editMessage(editorId: String, channelId: String, messageId: String, newBody: String): DeliveredMessage {
+        // Gate #2 (canWrite) — fail-closed BEFORE any lookup, uniform 403 (no message/channel existence tell).
+        if (!state.acl.canWrite(channelId, editorId)) {
+            audit.denied(editorId, channelId, "canWrite=false (edit)")
+            throw ForbiddenException("agent '$editorId' has no write access to channel '$channelId'")
+        }
+        val existing = store.byChannel(channelId).firstOrNull { it.id == messageId }
+            ?: throw NotFoundException("message '$messageId' not found", code = "message_not_found")
+        // Author-gate — only the author edits (identity-agnostic from==editor; §5b-independent).
+        if (existing.from != editorId) {
+            audit.denied(editorId, channelId, "edit non-author message '$messageId'")
+            throw ForbiddenException("only the author may edit this message", code = "edit_not_author")
+        }
+        val maskedBody = SecretMasker.mask(newBody) // Gate #3 egress — no secret persisted or re-served
+        val editedAt = clock.now()
+        val updated = store.update(messageId, maskedBody, editedAt)
+            ?: throw NotFoundException("message '$messageId' not found", code = "message_not_found") // TOCTOU safety
+        val delivered = deliveredOf(updated, editedAt)
+        _events.tryEmit(MessageEvent(delivered)) // live /ws/comm re-emit; client upserts by message.id
+        return delivered
     }
 
     /**
@@ -242,8 +284,17 @@ class Hub(
      * BYOA agent wire (the §9-frame-guard). Single source for the WS echo, REST get, AND the REST post return — one
      * envelope, so the client's `messagesByChannel` slot never holds two shapes.
      */
-    fun deliveredOf(m: Message): DeliveredMessage =
-        DeliveredMessage(m, MentionResolver.resolve(m.body, membersOf(m.channelId)))
+    fun deliveredOf(m: Message, editedAt: Long? = null): DeliveredMessage =
+        DeliveredMessage(m, MentionResolver.resolve(m.body, membersOf(m.channelId)), editedAt)
+
+    /** CYP-905 — wrap [msgs] as [DeliveredMessage]s, resolving all their out-of-band edit markers in ONE store call
+     *  (no per-message round-trip). Every read path that returns a list funnels through this so the "(edited)" marker
+     *  survives a GET / reconnect / restart (SQLite persists it), not only the live re-emit. */
+    private fun deliveredBatch(msgs: List<Message>): List<DeliveredMessage> {
+        if (msgs.isEmpty()) return emptyList()
+        val edits = store.editedAtOf(msgs.map { it.id })
+        return msgs.map { deliveredOf(it, edits[it.id]) }
+    }
 
     private fun membersOf(channelId: String): List<String> =
         state.channels.firstOrNull { it.id == channelId }?.members ?: emptyList()
@@ -251,7 +302,7 @@ class Hub(
     /** CYP-744 — the FRONTEND message history: [channelMessages] wrapped as [DeliveredMessage] with resolved spans.
      *  REST `GET /api/channels/{id}/messages` serves THIS; `/ws/hub` keeps serving bare [channelMessages] (§9). */
     fun deliveredMessages(readerId: String, channelId: String, since: Long? = null): List<DeliveredMessage> =
-        channelMessages(readerId, channelId, since).map(::deliveredOf)
+        deliveredBatch(channelMessages(readerId, channelId, since))
 
     /**
      * CYP-870 (OS-E) — the reply-tree rooted at [rootId] in [channelId]: the root message + its transitive
@@ -274,7 +325,7 @@ class Hub(
             collected[id] = msg
             childrenOf[id]?.forEach { if (it.id !in collected) stack.add(it.id) }
         }
-        return collected.values.sortedBy { it.seq }.map(::deliveredOf)
+        return deliveredBatch(collected.values.sortedBy { it.seq }) // CYP-905: carry edit markers on thread rows too
     }
 
     /**
