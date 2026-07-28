@@ -21,13 +21,18 @@ export function wsTicketEnabled(): boolean {
  */
 /**
  * Fold the WS auth into the query string. A `ticket` (flag-on, minted per-connect) → `?…&ticket=<t>` and NO token; no
- * ticket (default / flag-off) → `?…&token=<token>` exactly as before (byte-unchanged: token stays the last param). The
- * ticket and token are mutually exclusive — the DARK path never sends both.
+ * ticket (default / flag-off) → `?…&token=<token>`. The ticket and token are mutually exclusive.
+ *
+ * CYP-902 (CYP-230 credentials parity): a BLANK token is OMITTED — the client never sends `?token=` with an empty value;
+ * the same-origin session cookie authenticates instead (mirrors the REST Bearer guard, which omits an absent operator
+ * token). On a member cookie-only build `config.token` is `''`, so this keeps the read-feed handshake token-free rather
+ * than sending `?token=` (harmless today given the server's ifBlank→cookie fallback, but consistent + defense-in-depth).
+ * A non-blank token is folded exactly as before (byte-unchanged for the operator serve).
  */
 export function wsAuthParams(query: Record<string, string> | undefined, token: string, ticket?: string): string {
   const p = new URLSearchParams({ ...(query ?? {}) })
   if (ticket !== undefined) p.set('ticket', ticket)
-  else p.set('token', token)
+  else if (token.trim() !== '') p.set('token', token)
   return p.toString()
 }
 

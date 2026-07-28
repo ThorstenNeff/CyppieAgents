@@ -37,8 +37,12 @@ export class OneWayFeed<T> {
     // CYP-420 (Assist2 F1): fail-CLOSED default — a forgotten validator drops+reports, never silently passes.
     const validate = opts.validate ?? rejectUnvalidated<T>(opts.path)
     this.rs = new ReconnectingSocket({
-      // CYP-881 (DARK): `ticket` present (flag ON) → fold `?ticket=`; absent (flag OFF) → `?token=`, byte-unchanged.
-      url: (ticket) => `${opts.baseUrl}${opts.path}?${wsAuthParams(opts.query, opts.token, ticket)}`,
+      // CYP-881 (DARK): `ticket` present (flag ON) → fold `?ticket=`; absent → `?token=`. CYP-902: a blank token folds
+      // to no auth param → omit the `?` entirely (a clean cookie-only handshake, not a bare trailing `?`).
+      url: (ticket) => {
+        const qs = wsAuthParams(opts.query, opts.token, ticket)
+        return `${opts.baseUrl}${opts.path}${qs === '' ? '' : `?${qs}`}`
+      },
       ticketProvider: opts.ticketProvider,
       // CYP-420: runtime-validated; an invalid frame is dropped, never delivered (was: an unchecked cast).
       onText: (data) => deliverIfValid(validate, data, opts.onEvent),

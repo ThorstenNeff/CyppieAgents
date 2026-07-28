@@ -50,8 +50,12 @@ export class BidiFeed<TServer, TClient> {
         }
       : undefined
     this.rs = new ReconnectingSocket({
-      // CYP-881 (DARK): `ticket` present (flag ON) → fold `?ticket=`; absent (flag OFF) → `?token=`, byte-unchanged.
-      url: (ticket) => `${opts.baseUrl}${opts.path}?${wsAuthParams(opts.query, opts.token, ticket)}`,
+      // CYP-881 (DARK): `ticket` present (flag ON) → fold `?ticket=`; absent → `?token=`. CYP-902: a blank token folds
+      // to no auth param → omit the `?` entirely (a clean cookie-only handshake, not a bare trailing `?`).
+      url: (ticket) => {
+        const qs = wsAuthParams(opts.query, opts.token, ticket)
+        return `${opts.baseUrl}${opts.path}${qs === '' ? '' : `?${qs}`}`
+      },
       ticketProvider: opts.ticketProvider,
       // CYP-420: validation failures DROP the frame (deliverIfValid) instead of throwing into the socket's
       // onmessage — one malformed frame must not tear down a live channel (fail-closed, not fail-brittle).
