@@ -59,6 +59,13 @@ class HttpAuthRepository(
      * not linger; §setNewPassword). Null → only the native token is cleared (browser targets pass it).
      */
     private val cookieStorage: CookiesStorage? = null,
+    /**
+     * CYP-901 — which GitHub-login flow [githubStart] drives. **`true` = desktop** (RFC-8252 native loopback:
+     * `/self-service/login/api` + `return_to` at the 127.0.0.1 loopback + token-exchange). **`false` = web**
+     * (same-origin Kratos browser flow: `/self-service/login/browser` + `return_to` at the WEB ORIGIN, httpOnly
+     * session cookie — NEVER the loopback). Threaded from the platform entry point via `AuthFlip.liveFactory`.
+     */
+    private val nativeOidcLoopback: Boolean = false,
 ) : AuthRepository {
 
     private val platform = platformBaseUrl.trimEnd('/')
@@ -351,12 +358,19 @@ class HttpAuthRepository(
     // --- §5 / P4 GitHub OIDC (CYP-185) ---
 
     override suspend fun githubStart(returnToState: String?): GithubStart = failClosed(GithubStart.Error) {
-        // CYP-576 — native API-flow OIDC (Backend live-verified against staging Kratos v1.x, 2026-07-14). Replaces the
-        // old browser-flow-driven-by-the-app-client path, which orphaned the `ory_kratos_continuity` cookie in the app
-        // jar (the browser finished the callback without it → Kratos 400). API flows set NO CSRF/continuity cookie AND
-        // return a native `session_token` via token-exchange (not a cookie) → both the cookie-split AND the
-        // browser-cookie handoff gap are gone. Init arms the exchange + points `return_to` at the loopback; hold the
-        // `session_token_exchange_code` (init half) for the exchange after the loopback returns its `?code=`.
+        // CYP-901 — platform-correct GitHub-login flow. Desktop = RFC-8252 native loopback (token-exchange); web =
+        // same-origin Kratos browser flow (httpOnly session cookie). The web branch NEVER uses the loopback URL —
+        // that regression is what broke staging web login (a browser redirect to a dead 127.0.0.1 callback).
+        if (nativeOidcLoopback) nativeLoopbackGithubStart(returnToState) else webBrowserGithubStart()
+    }
+
+    /**
+     * CYP-576 desktop-native — API-flow OIDC (Backend live-verified against staging Kratos v1.x, 2026-07-14). API flows
+     * set NO CSRF/continuity cookie AND return a native `session_token` via token-exchange (not a cookie). Init arms the
+     * exchange + points `return_to` at the loopback; hold the `session_token_exchange_code` (init half) for the exchange
+     * after the loopback returns its `?code=`. Unchanged by CYP-901 — extracted verbatim as the `nativeOidcLoopback` arm.
+     */
+    private suspend fun nativeLoopbackGithubStart(returnToState: String?): GithubStart {
         clearKratosCookies() // cookie-free API flow: a prior broken browser-flow attempt may have left stale cookies
         // CYP-576 P1 (Backend security-rec): carry the app-generated `state` nonce in return_to so the loopback can
         // reject a callback that isn't ours (the loopback is unauth). Kratos preserves the return_to query and
@@ -380,7 +394,43 @@ class HttpAuthRepository(
         }.bodyAsText()
         val redirect = parseKratosRedirectUrl(submitBody)
         // Both halves required: no init code ⇒ the exchange can't complete ⇒ fail-closed to Error (never a half-flow).
-        if (redirect != null && initCode != null) GithubStart.Redirect(redirect, initCode) else GithubStart.Error
+        return if (redirect != null && initCode != null) GithubStart.Redirect(redirect, initCode) else GithubStart.Error
+    }
+
+    /**
+     * CYP-901 / CYP-454 — **web same-origin** GitHub login. The server is already web-native (Team-2 CYP-454): init a
+     * Kratos **browser** login flow (`/self-service/login/browser`, `Accept: application/json` per CYP-515), then submit
+     * `method=oidc, provider=github` with the flow's `csrf_token` (browser flows require it). Kratos answers 422
+     * `browser_location_change_required` with the GitHub `redirect_browser_to`. The browser navigates there full-page;
+     * after the GitHub round-trip Kratos sets the httpOnly `ory_kratos_session` cookie **same-origin** and redirects to
+     * Kratos' **`default_browser_return_url`** (the SPA origin root) — the SPA routes in-app.
+     *
+     * **No explicit `return_to`** (CYP-515/562): we do NOT construct a redirect URL — Kratos' server-side default +
+     * the server-side `allowed_return_urls` allowlist own the redirect target. That means **no client-side open-redirect
+     * surface at all**, and by construction **never the desktop loopback**. **No token in the URL, no token-exchange**
+     * → `initCode` is null (the httpOnly cookie is the credential; the VM's web path re-reads it via [session]).
+     */
+    private suspend fun webBrowserGithubStart(): GithubStart {
+        val initBody = client.get("$kratos/self-service/login/browser") {
+            authHeaders()
+            header(HttpHeaders.Accept, ContentType.Application.Json.toString()) // CYP-515: JSON flow, not the HTML redirect
+        }.bodyAsText()
+        val flow = parseKratosFlow(initBody)
+        val csrf = parseKratosCsrfToken(initBody) // browser flows require the csrf_token on submit
+        // Same-origin invariant: submit via the configured proxy + flow id, never the flow's own action host.
+        val submitBody = client.post("$kratos/self-service/login?flow=${flow.id}") {
+            authHeaders()
+            contentType(ContentType.Application.Json)
+            setBody(
+                buildJsonObject {
+                    put("method", "oidc"); put("provider", "github")
+                    if (csrf != null) put("csrf_token", csrf)
+                }.toString(),
+            )
+        }.bodyAsText()
+        val redirect = parseKratosRedirectUrl(submitBody)
+        // Cookie-based: no init code. A redirect ⇒ hand the browser to GitHub; none ⇒ fail-closed Error.
+        return if (redirect != null) GithubStart.Redirect(redirect, initCode = null) else GithubStart.Error
     }
 
     override suspend fun githubTokenExchange(initCode: String, returnToCode: String): SessionState =

@@ -69,8 +69,10 @@ fun App(
     // HttpAuthRepository; absent → the CYP-177 StubAuthRepository (Dev/Demo default, zero blast-radius); flag
     // set with missing/malformed URLs → fail-loud (AuthConfigException at startup, never a silent stub
     // downgrade — "login live was intended"). No VM/UI change (the seam's point).
-    val authRepo = remember(authRepository) {
-        authRepository ?: authRepositoryFor(resolveAuthMode(defaultAuthLiveEnv()))
+    val authRepo = remember(authRepository, nativeOidcLoopback) {
+        // CYP-901: the same platform flag that picks the VM's GitHub-login path also picks the repository's flow
+        // (desktop loopback vs web same-origin browser flow) — they must agree or web login redirects to a dead loopback.
+        authRepository ?: authRepositoryFor(resolveAuthMode(defaultAuthLiveEnv()), nativeOidcLoopback)
     }
     val authViewModel = remember(authRepo, nativeOidcLoopback) {
         AuthViewModel(authRepo, nativeOidcLoopback, newOidcState = oidcStateProvider)
