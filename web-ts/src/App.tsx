@@ -31,6 +31,7 @@ import { startLiveHub } from './state/liveHub'
 import { MultiHubShell } from './multihub/MultiHubShell'
 import { NavRailShell } from './nav/NavRailShell'
 import { navDestinations, CANVAS_DESTINATION_ID, type NavDestination } from './nav/navDestinations'
+import { canEditMessage } from './comm/editAffordance'
 import { AgentWindow } from './AgentWindow'
 import { closeAgentVm, liveAgentVmIds } from './agentview/agentVmStore'
 import { AclPanel } from './comm/AclPanel'
@@ -918,6 +919,10 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           messagesLoadError={messagesLoadError}
           onRetryMessages={() => {
             if (selectedChannelId !== null) loadMessages(selectedChannelId)
+          }}
+          canEdit={(from) => canEditMessage(operator, from, OPERATOR_AGENT_ID)}
+          onEditMessage={(msgId, body) => {
+            if (selectedChannelId !== null) void hubRepo.editMessage(selectedChannelId, msgId, body).catch(() => undefined)
           }}
         />
       )

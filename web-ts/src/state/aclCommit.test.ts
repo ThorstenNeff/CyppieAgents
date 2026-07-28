@@ -17,6 +17,7 @@ const repoWith = (putAcl: HubRepo['putAcl']): HubRepo => ({
   requestMode: vi.fn(),
   getMessages: vi.fn(),
   postMessage: vi.fn(),
+  editMessage: vi.fn(),
   setLifecycle: vi.fn(),
   getApiKey: vi.fn(),
   putApiKey: vi.fn(),

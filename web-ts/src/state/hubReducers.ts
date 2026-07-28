@@ -6,6 +6,7 @@
 // no duplicates. Non-optimistic ACL (§W9.2): a PUT records a *pending* flag; the ENFORCED value flips only when
 // the AclEvent echo arrives (applyAclEntry), which also clears that cell's pending — never the optimistic click.
 import { READ_STATE_UNAVAILABLE, type UnreadView } from '../comm/unreadModel'
+import { isNewerEdit } from '../comm/editedMessage'
 import type {
   ReadState as ReadStateWsEvent,
   AclEntry,
@@ -205,7 +206,18 @@ export const MESSAGE_TIMELINE_CAP = 500
 export function applyMessage(state: HubState, delivered: DeliveredMessage): HubState {
   const { channelId, id } = delivered.message
   const existing = state.messagesByChannel.get(channelId) ?? []
-  if (existing.some((d) => d.message.id === id)) return state // idempotent: drop the duplicate
+  // CYP-906 (Edit E1): upsert-by-id. A same-id envelope that is a NEWER EDIT (isNewerEdit) REPLACES the existing one IN
+  // PLACE (the edited message keeps its timeline position); a stale reconnect-replay of the original — or an identical
+  // replay — is a no-op (keep existing), so a stale replay can NEVER clobber a live edit. Was: unconditional drop.
+  const idx = existing.findIndex((d) => d.message.id === id)
+  if (idx >= 0) {
+    if (!isNewerEdit(delivered, existing[idx])) return state
+    const replaced = existing.slice()
+    replaced[idx] = delivered
+    const messagesByChannel = new Map(state.messagesByChannel)
+    messagesByChannel.set(channelId, replaced)
+    return { ...state, messagesByChannel }
+  }
   const appended = [...existing, delivered]
   // CYP-816: tail-cap, oldest-out. Covers live AND history-ingest — ingestMessages folds through here, so each fold
   // trims → net keeps the last N with no unbounded intermediate. Trims oldest-ARRIVED (≈ oldest-chronological).

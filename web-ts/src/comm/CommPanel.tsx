@@ -3,7 +3,7 @@
 // filter would lie about access). Timeline reuses the W6 autoscroll/retention; composer reuses the W5 input
 // history. Disclosure is the three distinct states (commDisclosure); sender identity via the contrast-safe accent
 // plus text (colour never alone).
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 import { formatLocalHhMm } from '../agentview/transcriptTime'
 import { useAutoscrollPin } from '../agentview/useAutoscrollPin'
 import { Composer } from '../agentview/Composer'
@@ -14,6 +14,7 @@ import { applyMentionSpans } from './mentionSpans'
 import { channelUnread, READ_STATE_UNAVAILABLE, type UnreadView } from './unreadModel'
 import { channelHasMention } from './mentionCue'
 import { messageKind, isOrchestrationKind, replyParent, replyDepth, indexById } from './orchestrationMessage'
+import { editedAt } from './editedMessage'
 import { AgentAddressPicker } from './AgentAddressPicker'
 import type { Channel, DeliveredMessage } from '../types/generated/contract'
 
@@ -44,6 +45,11 @@ export interface CommPanelProps {
   onRetryChannels?: () => void
   messagesLoadError?: boolean
   onRetryMessages?: () => void
+  /** CYP-906 (Edit E3): whether the viewer may edit a message from `from` (operator-only MVP: operator ∧
+   *  from===OPERATOR_AGENT_ID). Absent ⇒ no edit affordance rendered. The SERVER is the author-gate (403s a non-author). */
+  canEdit?: (from: string) => boolean
+  /** CYP-906: submit an edit — PUT the new body; non-optimistic (the timeline changes only on the server echo). */
+  onEditMessage?: (msgId: string, body: string) => void
 }
 
 const CONNECTION_TEXT: Record<CommPanelProps['connection'], string> = {
@@ -60,6 +66,9 @@ export function CommPanel(props: CommPanelProps) {
   const { channels, selectedChannelId, onSelectChannel, messages, senderRole, connection } = props
   const { channelsLoadError = false, onRetryChannels, messagesLoadError = false, onRetryMessages } = props
   const { readState = READ_STATE_UNAVAILABLE, unreadDividerIndex = null, messagesByChannel } = props
+  // CYP-906 (Edit E3): which message (if any) is being edited in-place, + its draft. Local UI state only.
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
   // CYP-437(#4): a terminal revoke (WS 1008) closes the write affordance entirely — don't leave a composer that
   // only fails server-side. This overrides the disclosure (a revoked socket can't write, whatever canWrite said).
   const revoked = connection === 'revoked'
@@ -215,6 +224,13 @@ export function CommPanel(props: CommPanelProps) {
                     </span>
                   )}
                   <time>{formatLocalHhMm(d.message.ts)}</time>
+                  {/* CYP-906 (Edit E2) — the "(bearbeitet)" marker, rendered ONLY from the server-stamped envelope
+                      editedAt (echo-only, never optimistic: a local send/edit never fabricates editedAt). */}
+                  {editedAt(d) !== null && (
+                    <span className="comm-edited" data-testid={`comm.message.${d.message.id}.edited`}>
+                      (bearbeitet)
+                    </span>
+                  )}
                   {/* CYP-868 orchestration-type badge — TASK/STATUS only (NOTE/absent = quiet default, no badge). The
                       kind is server-stamped; colour is never the sole signal (the kind WORD is in the badge). */}
                   {isOrchestrationKind(kind) && (
@@ -252,6 +268,44 @@ export function CommPanel(props: CommPanelProps) {
                       ),
                     )}
                   </span>
+                  {/* CYP-906 (Edit E3) — the operator-only edit affordance. Shown ONLY when the viewer may edit this
+                      message (operator ∧ own; props.canEdit). Editing is NON-OPTIMISTIC: submit PUTs the new body and the
+                      timeline changes only when the server echo folds back through applyMessage (E1) — no local mutation.
+                      The server remains the author-gate (a non-author PUT is 403'd). */}
+                  {props.canEdit?.(d.message.from) &&
+                    (editingId === d.message.id ? (
+                      <span className="comm-edit-inline">
+                        <Composer
+                          onSend={(text) => {
+                            props.onEditMessage?.(d.message.id, text)
+                            setEditingId(null)
+                          }}
+                          historySize={props.historySize}
+                          draft={editDraft}
+                          onDraftChange={setEditDraft}
+                        />
+                        <button
+                          type="button"
+                          className="comm-edit-cancel"
+                          data-testid={`comm.message.${d.message.id}.edit.cancel`}
+                          onClick={() => setEditingId(null)}
+                        >
+                          Abbrechen
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="comm-edit-trigger"
+                        data-testid={`comm.message.${d.message.id}.edit`}
+                        onClick={() => {
+                          setEditingId(d.message.id)
+                          setEditDraft(d.message.body)
+                        }}
+                      >
+                        Bearbeiten
+                      </button>
+                    ))}
                 </li>
                 </Fragment>
                 )
