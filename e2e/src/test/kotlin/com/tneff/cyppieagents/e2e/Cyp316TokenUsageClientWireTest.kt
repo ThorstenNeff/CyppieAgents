@@ -31,8 +31,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * CYP-316 INTEGRATION gate (my QA tooth) — the **real client [TokenUsageLiveSource]** driven against the **real
- * server `/ws/token-usage` route + real `AgentTokenUsageTracker`** on [e2ePlatform]. Dev's two real halves are
+ * CYP-316 INTEGRATION gate (my QA tooth) — the **real client [StatusMuxClient.tokenUsage]** driven against the **real
+ * server `/ws/status` route + real `AgentTokenUsageTracker`** on [e2ePlatform] (CYP-846: the standalone
+ * `/ws/token-usage` `TokenUsageLiveSource` was removed → the source is the muxed `/ws/status` projection). Dev's two real halves are
  * never stitched: `TokenUsageClientTest` runs the real client source against a HAND-ROLLED ws route, and
  * `TokenUsageSocketTest` runs the real route against a RAW ws client (hand-decoded frames). Neither proves the real
  * client source connects to, authenticates against, and decodes the real route end-to-end — the CYP-315 fake-shape
