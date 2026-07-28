@@ -13,6 +13,8 @@ import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.ApiError
 import com.tneff.cyppieagents.model.ApiErrorBody
 import com.tneff.cyppieagents.model.ChannelsEvent
+import com.tneff.cyppieagents.model.CreateChannelRequest
+import com.tneff.cyppieagents.model.RenameChannelRequest
 import com.tneff.cyppieagents.model.CommWsClientEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.MarkReadRequest
@@ -32,6 +34,7 @@ import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
@@ -276,6 +279,25 @@ fun Route.commRoutes(
             put("/acl") {
                 val entry = call.receive<AclEntry>()
                 call.respond(hub.setAcl(entry, by = HubState.OPERATOR_ID))
+            }
+            // CYP-869 (OS-B) — channel lifecycle: create/rename/archive arbitrary DIRECT/GROUP orchestration
+            // channels beyond hub-and-spoke. Operator-tier topology control (structurally gated, like PUT /acl).
+            // The write CHOKEPOINT is unchanged — creating a channel only seeds (channel, member) ACL entries the
+            // SAME `postAsAgent` canWrite reads; it adds NO send path and does NO body-derived routing. A new
+            // channel is unwritable-by-default (only members granted canWrite can send).
+            post("/channels") {
+                val req = call.receive<CreateChannelRequest>()
+                call.respond(HttpStatusCode.Created, hub.createChannel(req.id, req.name, req.kind, req.members))
+            }
+            put("/channels/{id}") {
+                val id = call.parameters["id"] ?: throw BadRequestException("missing channel id")
+                val req = call.receive<RenameChannelRequest>()
+                call.respond(hub.renameChannel(id, req.name))
+            }
+            delete("/channels/{id}") {
+                val id = call.parameters["id"] ?: throw BadRequestException("missing channel id")
+                hub.archiveChannel(id)
+                call.respond(HttpStatusCode.NoContent)
             }
         }
     }

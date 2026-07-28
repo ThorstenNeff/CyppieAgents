@@ -3,6 +3,8 @@ package com.tneff.cyppieagents.comm
 import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.Channel
+import com.tneff.cyppieagents.model.ChannelKind
+import com.tneff.cyppieagents.model.ChannelMemberGrant
 import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.ChannelReadState
 import com.tneff.cyppieagents.model.ChannelsEvent
@@ -121,6 +123,32 @@ class Hub(
         _events.tryEmit(AclEvent(saved))
         _events.tryEmit(ChannelsEvent(state.channels))
         return saved
+    }
+
+    /**
+     * CYP-869 (OS-B) — operator-gated channel creation: delegates to the single mutation point
+     * [HubState.createChannel] (fail-closed on HUB kind / blank / duplicate) and pushes a refreshed
+     * [ChannelsEvent] to live subscribers (CYP-18). A rejected create throws before any mutation → no event.
+     * The new channel is **unwritable-by-default**: writes still funnel through [postAsAgent]'s `canWrite`
+     * chokepoint — this adds NO write path and does NO body-derived routing.
+     */
+    fun createChannel(id: String, name: String, kind: ChannelKind, members: List<ChannelMemberGrant>): Channel {
+        val created = state.createChannel(id, name, kind, members)
+        _events.tryEmit(ChannelsEvent(state.channels))
+        return created
+    }
+
+    /** CYP-869 (OS-B) — rename a channel (display-only) and push a refreshed [ChannelsEvent]. 404 if unknown. */
+    fun renameChannel(id: String, newName: String): Channel {
+        val renamed = state.renameChannel(id, newName)
+        _events.tryEmit(ChannelsEvent(state.channels))
+        return renamed
+    }
+
+    /** CYP-869 (OS-B) — archive a DIRECT/GROUP channel (fail-closed on HUB spokes) and push a refreshed [ChannelsEvent]. */
+    fun archiveChannel(id: String) {
+        state.archiveChannel(id)
+        _events.tryEmit(ChannelsEvent(state.channels))
     }
 
     /**

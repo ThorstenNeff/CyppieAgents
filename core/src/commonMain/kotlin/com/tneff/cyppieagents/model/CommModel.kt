@@ -314,6 +314,34 @@ data class ChannelReadState(
 @Serializable
 data class MarkReadRequest(val upToSeq: Long)
 
+/**
+ * CYP-869 (OS-B) — a per-member access grant seeded when a channel is created. **Membership IS the ACL**
+ * (S17/CYP-93): a member with `canRead || canWrite` becomes a channel member; a grant of neither is a no-op.
+ * Fail-closed by construction — an agent NOT in the members list (or granted neither) has NO [AclEntry], so
+ * the [Hub.postAsAgent] `canWrite` chokepoint denies its writes (unwritable-by-default).
+ */
+@Serializable
+data class ChannelMemberGrant(val agentId: String, val canRead: Boolean = true, val canWrite: Boolean = true)
+
+/**
+ * CYP-869 (OS-B) — body for `POST /api/channels`: create an arbitrary [ChannelKind.DIRECT]/[ChannelKind.GROUP]
+ * orchestration channel with per-member ACL seeded ([members]). Operator-tier. [kind] is restricted to
+ * DIRECT/GROUP server-side ([ChannelKind.HUB] spokes stay managed by boot/`addAgent`, never this path). The
+ * new channel is unwritable-by-default: only members granted `canWrite` may send, enforced at the SAME
+ * [Hub.postAsAgent] chokepoint — this endpoint adds NO write path and does NO body-derived routing.
+ */
+@Serializable
+data class CreateChannelRequest(
+    val id: String,
+    val name: String,
+    val kind: ChannelKind = ChannelKind.GROUP,
+    val members: List<ChannelMemberGrant> = emptyList(),
+)
+
+/** CYP-869 (OS-B) — body for `PUT /api/channels/{id}`: rename a channel (display-only; no ACL/topology impact). */
+@Serializable
+data class RenameChannelRequest(val name: String)
+
 @Serializable
 data class ApiError(val code: String, val message: String)
 
