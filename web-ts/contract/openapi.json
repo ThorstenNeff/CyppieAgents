@@ -313,6 +313,45 @@
                 }
             }
         },
+        "/api/channels/{id}/messages/{msgId}/thread": {
+            "get": {
+                "operationId": "get_api_channels__id__messages__msgId__thread",
+                "x-auth-tier": "PARTICIPANT",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/DeliveredMessage"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/inbox": {
             "get": {
                 "operationId": "get_api_inbox",
