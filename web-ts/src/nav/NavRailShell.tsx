@@ -10,6 +10,7 @@
 import type { ReactNode } from 'react'
 import { useNavRailVisible } from './useNavRail'
 import { activeDestination, type NavDestination } from './navDestinations'
+import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 
 export interface NavRailShellProps {
   destinations: NavDestination[]
@@ -19,6 +20,9 @@ export interface NavRailShellProps {
   onSelect: (id: string) => void
   /** Render the pane for the active destination. Receives the resolved active destination (falls back to Canvas). */
   children: (active: NavDestination) => ReactNode
+  /** CYP-891 (NR-4): the roster failed to load → the agent block shows a retry affordance (NOT a confident-empty). */
+  rosterLoadError?: boolean
+  onRetryRoster?: () => void
 }
 
 // Fallback glyphs (semantic-parity, no icon dependency — web-ts already uses ●/○/▲; primary identity is the agent
@@ -60,7 +64,7 @@ function RailItem({ d, active, onSelect }: { d: NavDestination; active: boolean;
   )
 }
 
-export function NavRailShell({ destinations, activeId, onSelect, children }: NavRailShellProps) {
+export function NavRailShell({ destinations, activeId, onSelect, children, rosterLoadError = false, onRetryRoster }: NavRailShellProps) {
   const showRail = useNavRailVisible()
   const canvas = destinations.find((d) => d.kind === 'canvas') ?? destinations[0]
   const active = activeDestination(destinations, activeId)
@@ -88,10 +92,17 @@ export function NavRailShell({ destinations, activeId, onSelect, children }: Nav
           {workers.map((d) => (
             <RailItem key={d.id} d={d} active={active.id === d.id} onSelect={onSelect} />
           ))}
-          {showWorkersEmpty && (
-            <p className="nav-rail-workers-empty" data-testid="navRail.workersEmpty">
-              Keine Worker
-            </p>
+          {/* CYP-891 empty-honesty triad: a roster LOAD-ERROR (≠ "no workers") shows a retry affordance, never a
+              confident-empty caption; only a genuine loaded-&-empty roster shows "Keine Worker". The fixed Canvas/
+              Settings destinations render regardless — nav chrome must not fail on roster data. */}
+          {rosterLoadError ? (
+            <LoadErrorRetry testId="navRail.rosterError" onRetry={onRetryRoster ?? (() => {})} message="Agenten konnten nicht geladen werden." />
+          ) : (
+            showWorkersEmpty && (
+              <p className="nav-rail-workers-empty" data-testid="navRail.workersEmpty">
+                Keine Worker
+              </p>
+            )
           )}
         </div>
         {settings && <RailItem d={settings} active={active.id === settings.id} onSelect={onSelect} />}

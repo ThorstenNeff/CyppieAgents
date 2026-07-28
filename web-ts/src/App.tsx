@@ -1149,7 +1149,13 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           MultiHubShell, tier badge, banners) stays full-width and untouched. Below the gate NavRailShell is a pure
           passthrough that renders the Canvas destination, so the desktop canvas is unchanged. CYP-641 titleAccessory
           (activity badge) rides on each WindowFrame within the Canvas destination. */}
-      <NavRailShell destinations={navDests} activeId={activeNavId} onSelect={setActiveNavId}>
+      <NavRailShell
+        destinations={navDests}
+        activeId={activeNavId}
+        onSelect={setActiveNavId}
+        rosterLoadError={rosterLoadError}
+        onRetryRoster={loadRoster}
+      >
         {(active) => renderDestinationPane(active)}
       </NavRailShell>
     </div>

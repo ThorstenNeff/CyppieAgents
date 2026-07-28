@@ -111,6 +111,22 @@ describe('App assembly (CYP-425)', () => {
     expect(getByTestId('acl-panel')).toBeTruthy()
   })
 
+  it('★ CYP-891: selecting the Settings nav destination renders the SettingsPanel pane and leaves the canvas', async () => {
+    // MUT: break the settings branch of renderDestinationPane (fall through to canvas) → the agent windows stay + the
+    // settings pane never fills → this reds. Confirms the Settings destination end-to-end (rail item → pane).
+    const hub = new FakeSocketHub()
+    const { findByTestId, getByTestId, queryByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(getByTestId('agent-window.po')).toBeTruthy() // canvas is the default destination
+    fireEvent.click(getByTestId('navRail.dest.settings'))
+    await flush()
+    expect(await findByTestId('nav-pane-settings')).toBeTruthy() // the settings destination fills the pane
+    expect(getByTestId('settings.panel')).toBeTruthy()
+    expect(queryByTestId('agent-window.po')).toBeNull() // the canvas (floating agent windows) is no longer mounted
+  })
+
   it('CYP-662: `operator` (injected as a channel member) gets NO agent window — an ACL identity, not a spawnable agent', async () => {
     const hub = new FakeSocketHub()
     const repo = fakeRepo()
