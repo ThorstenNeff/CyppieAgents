@@ -64,7 +64,7 @@ export function AgentWindow({ setupBlocked = false,
   onLifecycle,
   socketDeps,
 }: AgentWindowProps) {
-  const { rows, send } = useAgentTranscript({
+  const { rows, send, draft, setDraft } = useAgentTranscript({
     baseUrl: wsBase,
     agentId,
     // CYP-454: /ws/agent uses the same-origin cookie, not a token. `token` stays for XtermView (/ws/terminal, CYP-286).
@@ -102,7 +102,17 @@ export function AgentWindow({ setupBlocked = false,
         orchestration={
           <div className="agent-orchestration">
             <AgentTranscript rows={rows} />
-            <Composer onSend={send} historySize={historySize} />
+            {/* CYP-890: draft is the shared VM's (survives a nav-destination switch). A PRODUCT_LEAD is a read-only
+                reviewer — the composer is disabled as the honest CLIENT hint of the server truth (canWrite=false;
+                postAsAgent 403s their send). The server remains the authority; this is render-mirrors-authority. */}
+            <Composer
+              onSend={send}
+              historySize={historySize}
+              draft={draft}
+              onDraftChange={setDraft}
+              disabled={agent?.role === 'PRODUCT_LEAD'}
+              disabledReason={agent?.role === 'PRODUCT_LEAD' ? 'Product-Lead ist Read-only-Reviewer — Senden deaktiviert.' : undefined}
+            />
           </div>
         }
         shell={

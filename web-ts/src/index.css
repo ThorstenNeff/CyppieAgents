@@ -141,6 +141,13 @@ body {
   display: flex;
   flex-direction: column;
 }
+/* CYP-890 (NR-3) — the read-only composer hint (PRODUCT_LEAD reviewer): a muted, non-alarm caption under the disabled
+   input. It mirrors the server truth (canWrite=false) — an honest hint, not the gate. */
+.composer-readonly-hint {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant);
+}
 /* CYP-889 (NR-2) — a non-canvas destination (agent / settings) fills the pane (no floating-window chrome). */
 .nav-pane-fill {
   flex: 1 1 auto;
