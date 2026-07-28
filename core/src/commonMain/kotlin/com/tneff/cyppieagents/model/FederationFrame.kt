@@ -34,6 +34,17 @@ data class FederationHello(
 ) : FederationFrame
 
 /**
+ * CYP-863 (S-Fed-6, §5-3) — a cross-hub revocation carried on the ratified wire. The issuer's [FederationRevocation]
+ * travels as a `FederationFrame` (the §5-3 propagation channel), so an active revoke fans out over the same transport
+ * a peer session rides. Additive variant (forward-compat §4b-4, no reorder/repurpose); a peer that does not know the
+ * `"revoke"` discriminator fails CLOSED on the unknown type rather than mis-handling it.
+ */
+@ExperimentalFederation
+@Serializable
+@SerialName("revoke")
+data class FederationRevocationFrame(val revocation: FederationRevocation) : FederationFrame
+
+/**
  * Negotiate the highest protocol version BOTH peers support: the top of the overlap
  * `[max(localMin, remoteMin) .. min(localMax, remoteMax)]`, i.e. **negotiate-DOWN** to the highest mutually-spoken
  * version. Returns `null` = **REFUSE** (§4b-3 out-of-range = fail-closed) when the ranges are disjoint (including a
