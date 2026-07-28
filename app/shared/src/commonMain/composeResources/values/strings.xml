@@ -279,6 +279,8 @@
     <string name="agent_add_worktree_label">Worktree-Ordner</string>
     <string name="agent_add_confirm">Anlegen</string>
     <string name="agent_add_spawn_hint">Angelegt. Der Agent startet noch nicht – über die Lifecycle-Steuerung starten.</string>
+    <string name="agent_add_remote_label">Remote-Agent (BYOA)</string>
+    <string name="agent_add_remote_hint">Läuft nicht lokal – der Server vergibt ein Token, der Agent verbindet sich über das Netz.</string>
     <!-- CYP-228: Agent-Add-Onboarding — Inline-Feldhilfe (supportingText + placeholder) + Auto-Note + Projekt-Scope-Note + Leerzustand -->
     <string name="agent_add_id_hint">Pflicht · unveränderlich. Nur a–z, 0–9, „-", „_". Wird zu Ordner, Branch &amp; Kanal.</string>
     <string name="agent_add_name_hint">Pflicht · Anzeigename, jederzeit änderbar.</string>

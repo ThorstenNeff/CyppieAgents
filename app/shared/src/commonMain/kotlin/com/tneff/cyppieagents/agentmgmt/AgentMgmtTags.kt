@@ -40,6 +40,8 @@ object AgentMgmtTags {
     const val ADD_SPAWN_HINT = "agentMgmt.add.spawnHint"
     const val ADD_PROJECT_NOTE = "agentMgmt.add.projectNote" // CYP-228: "added to the active project <name>" (dialog head)
     const val ADD_AUTO_NOTE = "agentMgmt.add.autoNote" // CYP-228: "token/branch/channel are auto-assigned"
+    const val ADD_REMOTE_TOGGLE = "agentMgmt.add.remote.toggle" // CYP-899: remote/BYOA create toggle
+    const val ADD_REMOTE_HINT = "agentMgmt.add.remote.hint" // CYP-899: remote-agent explanation
     const val ADD_ERROR = "agentMgmt.add.error"
     const val ADD_SUCCESS = "agentMgmt.add.success" // CYP-314: panel-level INFO confirmation after a successful create
 
