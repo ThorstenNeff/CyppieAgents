@@ -117,6 +117,23 @@ describe('CYP-889 — NavRailShell destinations + nav-state', () => {
     expect(queryByTestId('navRail.workersEmpty')).toBeNull()
   })
 
+  it('★ CYP-891 roster LOAD-ERROR → a retry affordance, NOT a confident-empty caption (error ≠ empty)', () => {
+    // MUT: drop the error branch (show workersEmpty regardless) → rosterError absent + workersEmpty shown on error → reds.
+    const onRetryRoster = vi.fn()
+    const { getByTestId, queryByTestId } = render(
+      <NavRailShell destinations={navDestinations([agent('po', 'PO')])} activeId="canvas" onSelect={() => {}} rosterLoadError onRetryRoster={onRetryRoster}>
+        {(a) => <div data-testid={`pane-${a.id}`} />}
+      </NavRailShell>,
+    )
+    expect(getByTestId('navRail.rosterError')).toBeTruthy()
+    expect(queryByTestId('navRail.workersEmpty')).toBeNull() // a load error is NOT a loaded-&-empty roster
+    fireEvent.click(getByTestId('navRail.rosterError.retry'))
+    expect(onRetryRoster).toHaveBeenCalled()
+    // the FIXED destinations still render (nav chrome must not fail on roster data)
+    expect(getByTestId('navRail.dest.canvas')).toBeTruthy()
+    expect(getByTestId('navRail.dest.settings')).toBeTruthy()
+  })
+
   it('★ real navigation, NOT a tablist (no role=tab/tablist — avoids false tabpanel ARIA)', () => {
     const { container } = renderShell('canvas')
     expect(container.querySelector('[role="tab"]')).toBeNull()
