@@ -11,6 +11,14 @@ object CommTags {
     const val TIMELINE = "comm.timeline"
     fun message(msgId: String) = "comm.message.$msgId"
 
+    /** CYP-879 (OS-A) — the orchestration-kind badge on a message (present iff the server stamped TASK/STATUS; NOTE
+     *  and absent-meta render NO badge). Parity with web-ts `comm.message.<id>.kind`. */
+    fun messageKind(msgId: String) = "comm.message.$msgId.kind"
+
+    /** CYP-879 (OS-A) — the reply reference on a message (present iff the server `inReplyTo` points at a PRESENT
+     *  parent; a top-level/orphan message has none). Parity with web-ts `comm.message.<id>.replyTo`. */
+    fun messageReplyTo(msgId: String) = "comm.message.$msgId.replyTo"
+
     const val COMPOSER_INPUT = "comm.composerInput"
     const val COMPOSER_SEND = "comm.composerSend"
     const val COMPOSER_READONLY = "comm.composerReadonly"

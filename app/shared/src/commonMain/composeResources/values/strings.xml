@@ -63,6 +63,7 @@
     <string name="comm_channels_empty">Keine zugänglichen Kanäle</string>
     <string name="comm_timeline_empty">Noch keine Nachrichten</string>
     <string name="comm_msg_pending">Wird gesendet…</string>
+    <string name="comm_reply_to">Antwort auf %1$s</string>
     <string name="comm_status_connecting">Verbinde…</string>
     <string name="comm_readonly_hint">Nur Lesezugriff in diesem Kanal</string>
     <string name="comm_send_denied">Keine Schreibrechte in diesem Kanal</string>
