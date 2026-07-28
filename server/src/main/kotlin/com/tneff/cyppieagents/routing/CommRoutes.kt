@@ -19,6 +19,7 @@ import com.tneff.cyppieagents.model.CommWsClientEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.MarkReadRequest
 import com.tneff.cyppieagents.model.MessageEvent
+import com.tneff.cyppieagents.model.MessageKind
 import com.tneff.cyppieagents.model.ProjectScope
 import com.tneff.cyppieagents.model.ReadStateEvent
 import com.tneff.cyppieagents.model.Role
@@ -204,9 +205,28 @@ fun Route.commRoutes(
                 val participant = call.requireCommReader(deps, registry)
                 val channelId = call.parameters["id"] ?: throw BadRequestException("missing channel id")
                 val since = call.request.queryParameters["since"]?.toLongOrNull()
+                // CYP-870 (OS-E): optional Task/Status surface — `?kind=TASK|STATUS` filters by the POSTER LABEL
+                // meta.kind (render≠authority; a pure read, the canWrite chokepoint was the authority at post time).
+                // A present-but-invalid kind is a 400 (never a silent "all"): the client asked to filter, so honor it.
+                val kind = call.request.queryParameters["kind"]?.let { raw ->
+                    MessageKind.entries.firstOrNull { it.name == raw }
+                        ?: throw BadRequestException("invalid kind '$raw'", code = "invalid_kind")
+                }
                 // CYP-744: the frontend history carries the DeliveredMessage wrapper (spans) — same envelope as the WS
                 // echo + the POST return, so the client's messagesByChannel slot holds ONE shape.
-                call.respond(hub.deliveredMessages(participant, channelId, since))
+                call.respond(
+                    if (kind != null) hub.messagesOfKind(participant, channelId, kind, since)
+                    else hub.deliveredMessages(participant, channelId, since),
+                )
+            }
+            // CYP-870 (OS-E): the reply-tree read — the message at {msgId} + its transitive inReplyTo-descendants,
+            // ACL-canRead-filtered, ordered by seq. A read model over the existing thread structure (inReplyTo is a
+            // query label, not a routing authority); same participant read-tier as the channel history above.
+            get("/{msgId}/thread") {
+                val participant = call.requireCommReader(deps, registry)
+                val channelId = call.parameters["id"] ?: throw BadRequestException("missing channel id")
+                val msgId = call.parameters["msgId"] ?: throw BadRequestException("missing message id")
+                call.respond(hub.thread(participant, channelId, msgId))
             }
             post {
                 // CYP-188 P2b-iii: the WRITE gate admits a verified human session (like the read gate); the

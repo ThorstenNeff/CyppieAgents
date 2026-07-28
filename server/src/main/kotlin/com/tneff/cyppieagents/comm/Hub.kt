@@ -11,6 +11,7 @@ import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.MessageEvent
+import com.tneff.cyppieagents.model.MessageKind
 import com.tneff.cyppieagents.model.MessageMeta
 import com.tneff.cyppieagents.model.ReadStateEvent
 import com.tneff.cyppieagents.auth.ParticipantPrincipal
@@ -251,6 +252,39 @@ class Hub(
      *  REST `GET /api/channels/{id}/messages` serves THIS; `/ws/hub` keeps serving bare [channelMessages] (§9). */
     fun deliveredMessages(readerId: String, channelId: String, since: Long? = null): List<DeliveredMessage> =
         channelMessages(readerId, channelId, since).map(::deliveredOf)
+
+    /**
+     * CYP-870 (OS-E) — the reply-tree rooted at [rootId] in [channelId]: the root message + its transitive
+     * `meta.inReplyTo`-descendants, ACL-`canRead`-filtered for [readerId] and ordered by `seq`. This READS the
+     * existing thread structure — `inReplyTo` is a query label, never a routing authority; the method never
+     * writes or routes. Empty when [rootId] is not visible to [readerId]. Cycles are guarded (a message collected
+     * once is not revisited), so a malformed `inReplyTo` cycle cannot loop.
+     */
+    fun thread(readerId: String, channelId: String, rootId: String): List<DeliveredMessage> {
+        val visible = channelMessages(readerId, channelId) // ACL-canRead-filtered channel history (bare Message)
+        val byId = visible.associateBy { it.id }
+        if (rootId !in byId) return emptyList()
+        val childrenOf = visible.filter { it.meta?.inReplyTo != null }.groupBy { it.meta!!.inReplyTo!! }
+        val collected = LinkedHashMap<String, Message>()
+        val stack = ArrayDeque<String>().apply { add(rootId) }
+        while (stack.isNotEmpty()) {
+            val id = stack.removeLast()
+            if (id in collected) continue
+            val msg = byId[id] ?: continue
+            collected[id] = msg
+            childrenOf[id]?.forEach { if (it.id !in collected) stack.add(it.id) }
+        }
+        return collected.values.sortedBy { it.seq }.map(::deliveredOf)
+    }
+
+    /**
+     * CYP-870 (OS-E) — the [readerId]-visible messages of [channelId] filtered to a [MessageKind] (the Task/Status
+     * surface: query a spoke's TASKs, or STATUS deltas with [since]). ACL-`canRead`-filtered. **`meta.kind` is a
+     * POSTER LABEL rendered as-is, NOT a server-verified claim** (CYP-870 (A) honesty rule) — routing/authority is
+     * NOT derived here; the write authority stayed the canWrite chokepoint at post time. A pure read/query.
+     */
+    fun messagesOfKind(readerId: String, channelId: String, kind: MessageKind, since: Long? = null): List<DeliveredMessage> =
+        deliveredMessages(readerId, channelId, since).filter { it.message.meta?.kind == kind }
 
     /** Aggregated inbox across all channels [readerId] may read (Spec 02 §6.3, ACL-filtered). */
     fun inbox(readerId: String, since: Long? = null): List<Message> {

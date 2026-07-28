@@ -94,6 +94,9 @@ object RestContract {
         // CYP-744: frontend message surfaces carry the DeliveredMessage wrapper (message + server-resolved spans);
         // /ws/hub keeps bare Message (§9). GET history + POST return are the same envelope as the /ws/comm echo.
         Op("GET", "/api/channels/{id}/messages", Tier.PARTICIPANT, response = arr<DeliveredMessage>()),
+        // CYP-870 (OS-E): reply-tree read (root message + its inReplyTo-descendants). The Task/Status surface is the
+        // `?kind=TASK|STATUS` query param on GET …/messages above (a filter, not a new path — no Op change).
+        Op("GET", "/api/channels/{id}/messages/{msgId}/thread", Tier.PARTICIPANT, response = arr<DeliveredMessage>()),
         Op("POST", "/api/channels/{id}/messages", Tier.PARTICIPANT_WRITE, request = json<SendMessageRequest>(), response = json<DeliveredMessage>()),
         Op("GET", "/api/inbox", Tier.PARTICIPANT, response = arr<Message>()),
         // CYP-705 — unread-per-channel read-state. OPERATOR-tier (measurement DoD: no MEMBER-tier read-state
