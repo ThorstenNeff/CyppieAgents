@@ -19,10 +19,12 @@ import kotlinx.coroutines.flow.flow
  *
  * `sendMessage` stays Hub-mediated — it hands a [UserTurn] to [sink], never touching stdin (05 §2).
  *
- * NOTE (flagged to PO/backend): the per-agent event-stream WS endpoint that produces [source] /
- * accepts [sink] is not part of the CYP-9 `:core` freeze (server side untouched). Its route +
- * frame contract must be reconciled before the Ktor adapter is wired; until then the app uses
- * [StubAgentSession]. This class is the mapping seam that adapter will plug into.
+ * The per-agent event-stream WS (`/ws/agent`) that produces [source] / accepts [sink] is now LIVE and
+ * reconciled: production wires the real [AgentWsClient] into this mapping seam in `AgentShell`
+ * (`MappingAgentSession(source = ws.events, sink = ws::send, connection = ws.connection)`), with
+ * server-side durable replay on reconnect (`?since` over the persisted event store, CYP-198/204) so the
+ * window backfills instead of blanking. [StubAgentSession] is now TEST-only. This class is the
+ * transport-agnostic mapping seam the WS adapter plugs into.
  */
 class MappingAgentSession(
     private val source: Flow<StoredAgentEvent>,
