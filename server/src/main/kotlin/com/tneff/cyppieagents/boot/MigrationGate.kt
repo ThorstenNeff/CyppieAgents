@@ -97,4 +97,6 @@ class MigrationGatedChannelShareStore(private val sourceA: ChannelShareStore, pr
     override fun sharedInboundChannelIds(activeProjectId: String): Set<String> = sourceA.sharedInboundChannelIds(activeProjectId)
     override fun share(channelId: String, ownerProjectId: String, sharedWith: Set<String>): ChannelShareRecord = throw storeMigrating("channel_share", reason)
     override fun revoke(channelId: String): Boolean = throw storeMigrating("channel_share", reason)
+    override fun removeProject(projectId: String): Int = throw storeMigrating("channel_share", reason) // CYP-910: a write → frozen during the window
+    override fun sweepOrphans(liveProjectIds: Set<String>, federationEnabled: Boolean): Int = throw storeMigrating("channel_share", reason) // CYP-910: a write → frozen during the window
 }

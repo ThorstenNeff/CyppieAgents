@@ -47,6 +47,30 @@ class PgChannelShareStore(
         return allRecords().filter { activeProjectId in it.sharedWith }.map { it.channelId }.toSet()
     }
 
+    override fun removeProject(projectId: String): Int {
+        if (projectId.isBlank()) return 0 // fail-closed: never an unscoped purge
+        return tx { c -> mutateBy(c) { purgeProjectFromShare(it, projectId) } }
+    }
+
+    override fun sweepOrphans(liveProjectIds: Set<String>, federationEnabled: Boolean): Int =
+        tx { c -> mutateBy(c) { sweepOrphanFromShare(it, liveProjectIds, federationEnabled) } }
+
+    /** Apply a per-record [decide] across the whole gate within one tx (drops/narrows committed together). */
+    private fun mutateBy(c: Connection, decide: (ChannelShareRecord) -> SharePurge): Int {
+        val all = c.prepareStatement("SELECT record_json FROM channel_share").use { st ->
+            st.executeQuery().use { rs -> buildList { while (rs.next()) add(decode(rs.getString(1))) } }
+        }
+        var touched = 0
+        for (rec in all) {
+            when (val r = decide(rec)) {
+                SharePurge.Drop -> { deleteOn(c, rec.channelId); touched++ }
+                is SharePurge.Narrow -> { upsertOn(c, r.record); touched++ }
+                SharePurge.Untouched -> {}
+            }
+        }
+        return touched
+    }
+
     // ---- MigrationTarget (canonical rows: [channel_id, owner_project_id, record_json]) ----
 
     override fun exportRows(): List<ByteArray> = tx { c ->
@@ -73,18 +97,22 @@ class PgChannelShareStore(
         }
     }
 
-    private fun upsert(rec: ChannelShareRecord) = tx { c ->
+    private fun upsert(rec: ChannelShareRecord) = tx { c -> upsertOn(c, rec) }
+
+    /** CYP-910: the upsert body on an EXISTING connection, so [removeProject] can batch drops+narrows in one tx. */
+    private fun upsertOn(c: Connection, rec: ChannelShareRecord) {
         c.prepareStatement(
             "INSERT INTO channel_share (channel_id, owner_project_id, record_json) VALUES (?, ?, ?) " +
                 "ON CONFLICT (channel_id) DO UPDATE SET owner_project_id = EXCLUDED.owner_project_id, record_json = EXCLUDED.record_json",
         ).use { it.setString(1, rec.channelId); it.setString(2, rec.ownerProjectId); it.setString(3, CommJson.encodeToString(rec)); it.executeUpdate() }
-        Unit
     }
 
-    private fun deleteRecord(channelId: String): Boolean = tx { c ->
+    private fun deleteRecord(channelId: String): Boolean = tx { c -> deleteOn(c, channelId) }
+
+    /** CYP-910: the delete body on an EXISTING connection (shared by [revoke] and [removeProject]). */
+    private fun deleteOn(c: Connection, channelId: String): Boolean =
         c.prepareStatement("DELETE FROM channel_share WHERE channel_id = ?")
             .use { it.setString(1, channelId); it.executeUpdate() } > 0
-    }
 
     private fun decode(json: String): ChannelShareRecord = CommJson.decodeFromString(json)
 

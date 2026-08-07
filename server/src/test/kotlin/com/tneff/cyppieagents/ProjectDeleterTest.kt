@@ -7,6 +7,7 @@ import com.tneff.cyppieagents.boot.ProjectRegistry
 import com.tneff.cyppieagents.boot.RepoConfig
 import com.tneff.cyppieagents.boot.Secrets
 import com.tneff.cyppieagents.boot.WorktreeManager
+import com.tneff.cyppieagents.comm.ChannelShareStore
 import com.tneff.cyppieagents.events.EventFilter
 import com.tneff.cyppieagents.events.InMemoryEventSink
 import com.tneff.cyppieagents.events.Page
@@ -44,7 +45,9 @@ class ProjectDeleterTest {
         val worktrees = WorktreeManager(FakeGit(), gitRoot)
         // CYP-215 F2: a REAL override file so the cascade's removeProject is exercised end-to-end (durable).
         val overrides = AgentOverrideStore(File(gitRoot, "agent-overrides.json"))
-        val deleter = ProjectDeleter(registry, config, events, worktrees, agentOverrides = overrides)
+        // CYP-910: a REAL share store so the cascade's channel-share purge is exercised end-to-end (durable).
+        val shares = ChannelShareStore(File(gitRoot, "channel-shares.json"))
+        val deleter = ProjectDeleter(registry, config, events, worktrees, agentOverrides = overrides, channelShares = shares)
 
         fun seedTwoProjectsWithResources() = runBlocking {
             registry.create(CreateProjectRequest("beta", "Beta")) // default stays active
@@ -130,6 +133,31 @@ class ProjectDeleterTest {
             assertEquals(0, f.overrides.allFor("beta").size, "F2: beta's override JSON (incl. avatar) purged on cascade")
             assertTrue(f.overrides.overrideOf("default", "po") != null, "no-cross-project: default's override intact")
             assertEquals("KeepMe", f.overrides.overrideOf("default", "po")?.name, "default override byte-intact")
+        } finally {
+            f.cleanup()
+        }
+    }
+
+    @Test
+    fun delete_nonActive_purgesChannelShares_ownerAndGrantee_notOtherProjects() = runBlocking {
+        // CYP-910: the cross-project share gate is the last cascade-partition. A surviving share is a LIVE
+        // inbound-reach grant a re-created project id would inherit (id-resurrection leak). Deleting beta must
+        // drop shares beta OWNS and strip beta from any other record's grantees — while default's own share to a
+        // THIRD project (gamma) stays byte-intact (no-cross-project).
+        val f = Fixture()
+        try {
+            f.seedTwoProjectsWithResources()
+            f.shares.share("betaChan", ownerProjectId = "beta", sharedWith = setOf("default")) // beta OWNS a share
+            f.shares.share("defChan", ownerProjectId = "default", sharedWith = setOf("beta", "gamma")) // beta is a GRANTEE
+            assertEquals(setOf("betaChan"), f.shares.sharedInboundChannelIds("default"), "seed: default reaches betaChan")
+            assertEquals(setOf("defChan"), f.shares.sharedInboundChannelIds("beta"), "seed: beta reaches defChan")
+
+            f.deleter.delete("beta") // non-active cascade
+
+            assertEquals(null, f.shares.record("betaChan"), "owner-orphan: beta's OWNED share purged")
+            assertEquals(emptySet(), f.shares.sharedInboundChannelIds("beta"), "grantee-orphan: a re-created 'beta' inherits NO reach")
+            assertEquals(setOf("defChan"), f.shares.sharedInboundChannelIds("gamma"), "no-cross-project: gamma's reach intact")
+            assertEquals(setOf("gamma"), f.shares.record("defChan")?.sharedWith, "default's share narrowed to gamma only")
         } finally {
             f.cleanup()
         }

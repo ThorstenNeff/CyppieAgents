@@ -56,6 +56,11 @@ class ProjectDeleter(
     // CYP-325 (defect 2): the durable per-agent token-usage overlay — cascade-purged so a deleted project's
     // last-context-token values don't linger (and can't rehydrate a resurrected id).
     private val tokenUsage: TokenUsageStore? = null,
+    // CYP-910: the cross-project channel-share gate — cascade-purged with the project. Its orphan is
+    // SECURITY-relevant, not hygiene: a surviving share is a live inbound-reach grant that a re-created project
+    // id would inherit (id-resurrection leak). removeProject drops shares this project OWNS and strips it from
+    // any other record's grantees. Mirrors CYP-256/325 (the last cascade-partition that was missing a purge).
+    private val channelShares: com.tneff.cyppieagents.comm.ChannelShareStore? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.projectdeleter")
     private val mutex = Mutex()
@@ -70,13 +75,16 @@ class ProjectDeleter(
         val overridesRemoved = agentOverrides?.removeProject(projectId) ?: 0 // CYP-215 F2: purge the override JSON
         val agentsRemoved = projectAgents?.removeProject(projectId) ?: 0 // CYP-256 (.5a): purge the agent-set store
         tokenUsage?.removeProject(projectId) // CYP-325 (defect 2): purge the persisted token-usage values
+        // CYP-910: purge the channel-share gate — owner-shares dropped, this project stripped from any grantee set
+        // (log-only count, like avatars/overrides/agents; the receipt DTO stays byte-clean — no contract change).
+        val sharesRemoved = channelShares?.removeProject(projectId) ?: 0
         // opt-in: only the warned path removes the worktree (uncommitted work); branches always kept.
         val worktreesRemoved = if (deleteWorktrees) worktrees.deleteProject(projectId) else 0
         registry.drop(projectId) // commit metadata removal last (no half-gone-but-listed project)
 
         log.info(
-            "project '{}' cascade-deleted: config={}, events={}, avatars={}, overrides={}, agents={}, deleteWorktrees={}, worktrees={}",
-            projectId, configRemoved, eventsRemoved, avatarsRemoved, overridesRemoved, agentsRemoved, deleteWorktrees, worktreesRemoved,
+            "project '{}' cascade-deleted: config={}, events={}, avatars={}, overrides={}, agents={}, shares={}, deleteWorktrees={}, worktrees={}",
+            projectId, configRemoved, eventsRemoved, avatarsRemoved, overridesRemoved, agentsRemoved, sharesRemoved, deleteWorktrees, worktreesRemoved,
         )
         ProjectDeleteReceipt(projectId, configRemoved, eventsRemoved, worktreesRemoved)
     }

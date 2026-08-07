@@ -85,6 +85,35 @@ class SqliteChannelShareStore(
         }
     }
 
+    override fun removeProject(projectId: String): Int = synchronized(lock) {
+        if (projectId.isBlank()) return@synchronized 0 // fail-closed: never an unscoped purge
+        mutateBy { purgeProjectFromShare(it, projectId) }
+    }
+
+    override fun sweepOrphans(liveProjectIds: Set<String>, federationEnabled: Boolean): Int = synchronized(lock) {
+        mutateBy { sweepOrphanFromShare(it, liveProjectIds, federationEnabled) }
+    }
+
+    /** Apply a per-record [decide] across the whole gate (caller holds [lock]); commit drops/narrows to the db. */
+    private fun mutateBy(decide: (ChannelShareRecord) -> SharePurge): Int {
+        val all = conn.prepareStatement("SELECT record_json FROM channel_share").use { ps ->
+            ps.executeQuery().use { rs -> buildList { while (rs.next()) add(decode(rs.getString(1))) } }
+        }
+        var touched = 0
+        for (rec in all) {
+            when (val r = decide(rec)) {
+                SharePurge.Drop -> { deleteRow(rec.channelId); touched++ }
+                is SharePurge.Narrow -> { upsert(r.record); touched++ }
+                SharePurge.Untouched -> {}
+            }
+        }
+        return touched
+    }
+
+    private fun deleteRow(channelId: String) {
+        conn.prepareStatement("DELETE FROM channel_share WHERE channel_id=?").use { it.setString(1, channelId); it.executeUpdate() }
+    }
+
     private fun decode(json: String) = CommJson.decodeFromString(ChannelShareRecord.serializer(), json)
 
     private fun upsert(rec: ChannelShareRecord) {

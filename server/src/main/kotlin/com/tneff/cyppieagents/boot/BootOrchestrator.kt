@@ -1001,7 +1001,19 @@ class BootOrchestrator(
 
         // S13 / CYP-91: the multi-project registry (loaded early, above, for the CYP-305 effective-active seam)
         // + the cascade deleter composing the strictly-projectId-scoped teardown primitives — /api/projects.
-        val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees, agentEventStore, avatarBlobs, agentOverrides, projectAgents, tokenUsageStore)
+        val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees, agentEventStore, avatarBlobs, agentOverrides, projectAgents, tokenUsageStore, channelShares)
+
+        // CYP-910: one-time retroactive orphan-share sweep. The id-resurrection leak can already sit in the live
+        // (migrated) share data, so the forward-purge in ProjectDeleter alone leaves it. Run ONCE here at boot —
+        // after the registry is loaded, NOT during a migration window (MigrationGatedChannelShareStore throws) —
+        // keyed on the live project ids: owner-orphans dropped unconditionally, dead grantees stripped ONLY while
+        // federation is off (a foreign grantee is legit once federation arms — §9.3: pass the real hub flag then).
+        // Idempotent (re-run = 0); defensive runCatching so a sweep hiccup never aborts boot.
+        runCatching {
+            val liveProjectIds = projectRegistry.projects().map { it.id }.toSet()
+            val swept = channelShares.sweepOrphans(liveProjectIds, federationEnabled = false)
+            if (swept > 0) log.info("CYP-910: boot orphan-share sweep purged {} orphaned share record(s)", swept)
+        }.onFailure { log.warn("CYP-910: boot orphan-share sweep failed ({}) — continuing", it.message) }
 
         // CYP-326 — the platform-side compact orchestrator (boot project; MVP single-project). Watches the PO's
         // context (CYP-325 feed); on a >threshold up-crossing + "compact allowed" it runs the staggered team
