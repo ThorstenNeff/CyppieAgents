@@ -39,6 +39,7 @@ const fakeRepo = (): HubRepo => ({
   requestMode: vi.fn().mockResolvedValue(undefined),
   getMessages: vi.fn().mockResolvedValue([]),
   postMessage: vi.fn().mockResolvedValue({ message: { id: 'x', channelId: '', from: '', body: '', ts: 0 } }),
+  editMessage: vi.fn().mockResolvedValue({ message: { id: 'x', channelId: '', from: '', body: '', ts: 0 } }),
   setLifecycle: vi.fn().mockResolvedValue({ agentId: 'backend', runState: 'RUNNING' }),
   getApiKey: vi.fn().mockResolvedValue({ set: true, masked: '***k999' }),
   putApiKey: vi.fn().mockResolvedValue({ set: true, masked: '***new4' }),

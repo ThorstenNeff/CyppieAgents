@@ -105,6 +105,9 @@ export interface HubRepo {
   /** POST /api/channels/{id}/messages — returns the server DeliveredMessage envelope; the same envelope also
    *  echoes over /ws/comm (CYP-744 — REST + WS carry one shape, so the fold is uniform). */
   postMessage(channelId: string, body: string): Promise<DeliveredMessage>
+  /** CYP-906 — PUT /api/channels/{id}/messages/{msgId} {body}. Returns the server DeliveredMessage envelope (with the
+   *  server-stamped editedAt); the same edit also re-emits via /ws/comm → applyMessage upserts. Non-optimistic. */
+  editMessage(channelId: string, msgId: string, body: string): Promise<DeliveredMessage>
   /** POST /api/agents/{id}/{start|stop|restart} (operator). Returns the server run-state; the same state also
    *  arrives on /ws/lifecycle — non-optimistic, so the header flips on that event, not the click (CYP-431). */
   setLifecycle(agentId: string, action: 'start' | 'stop' | 'restart'): Promise<AgentRunStateEvent>
@@ -279,6 +282,12 @@ export class RestHubRepo implements HubRepo {
     // SendMessageRequest { body } — hand-modeled (REST-only DTO, not in the asyncapi export; CYP-426). The response
     // is the DeliveredMessage envelope (same shape as history + the /ws/comm echo), validated like every consumed body.
     return this.rest.post(`/api/channels/${encodeURIComponent(channelId)}/messages`, { body }, contractResponse('DeliveredMessage', DeliveredMessageSchema))
+  }
+  editMessage(channelId: string, msgId: string, body: string): Promise<DeliveredMessage> {
+    // EditMessageRequest { body } — REST-only DTO (hand-modeled like SendMessageRequest). Non-optimistic: the returned
+    // envelope + the /ws/comm re-emit both fold through applyMessage (upsert-by-id), so the edit lands the same way live
+    // and on reconnect. The SERVER is the author-gate (a non-author PUT is 403'd) — the client only offers the affordance.
+    return this.rest.put(`/api/channels/${encodeURIComponent(channelId)}/messages/${encodeURIComponent(msgId)}`, { body }, contractResponse('DeliveredMessage', DeliveredMessageSchema))
   }
   setLifecycle(agentId: string, action: 'start' | 'stop' | 'restart'): Promise<AgentRunStateEvent> {
     return this.rest.post(`/api/agents/${encodeURIComponent(agentId)}/${action}`, undefined, contractResponse('AgentRunStateEvent', AgentRunStateEventSchema))

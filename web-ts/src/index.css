@@ -372,6 +372,11 @@ body {
   padding: 0 6px;
   border-radius: 4px;
 }
+/* CYP-906 (Edit E2) — the "(bearbeitet)" marker: a muted, non-alarm caption beside the timestamp. */
+.comm-edited {
+  font-size: 0.7rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
 .comm-kind-task {
   background: var(--md-sys-color-primary-container);
   color: var(--md-sys-color-on-primary-container);
